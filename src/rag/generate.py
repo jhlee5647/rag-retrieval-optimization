@@ -5,6 +5,7 @@ uv run --env-file .env python -m rag.generate configs/naive.yaml --contexts runs
 
 import argparse
 import json
+import platform
 import shutil
 import sys
 import time
@@ -96,6 +97,8 @@ def generate(
     record = {
         "command": command,
         "git_commit": commit,
+        # 여러 장비의 실행 폴더를 합친 뒤에도 어느 장비의 실행인지 가린다.
+        "host": platform.node(),
         # 문서 수, 평가 파일 해시, 색인 이름은 이 검색 실행 폴더의 run.json에 있다.
         "contexts": str(contexts_dir),
         "servers": servers,

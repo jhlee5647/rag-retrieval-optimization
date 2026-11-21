@@ -87,7 +87,7 @@ uv run --env-file .env python -m rag.compare
 | 파일 | 내용 |
 |---|---|
 | `config.yaml` | 실행에 쓴 config 사본. 생성 실행에는 프롬프트 틀 사본(`answer.txt`)도 있다 |
-| `run.json` | 명령, git 커밋, 문서 수, 평가 파일 해시, 색인 이름, 확인한 서버 모델, 소요 시간 |
+| `run.json` | 명령, git 커밋, 장비 이름, 문서 수, 평가 파일 해시, 색인 이름, 확인한 서버 모델, 소요 시간 |
 | `contexts.jsonl` | (검색) 문항마다 가져온 청크와 문서 ID |
 | `results.jsonl` | (생성) 문항마다 답, 청크, 문서 ID |
 | `scores.jsonl` | 문항별 점수 |

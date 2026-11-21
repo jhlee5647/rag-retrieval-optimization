@@ -142,3 +142,16 @@ def test_records_checked_servers(setup, tmp_path):
 
     # Assert
     assert json.loads((run_dir / "run.json").read_text())["servers"] == checked
+
+
+def test_records_host_name(setup, tmp_path, monkeypatch):
+    """여러 장비의 실행 폴더를 합친 뒤에도 어느 장비의 실행인지 가리도록, run.json에 호스트 이름을 남긴다."""
+    # Arrange
+    config_path, contexts_dir, _ = setup
+    monkeypatch.setattr("platform.node", lambda: "node-b")
+
+    # Act
+    run_dir = run(config_path, contexts_dir, EchoLLM(), tmp_path)
+
+    # Assert
+    assert json.loads((run_dir / "run.json").read_text())["host"] == "node-b"

@@ -10,6 +10,7 @@ import asyncio
 import json
 import math
 import os
+import platform
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
@@ -72,7 +73,12 @@ def score(
     with (run_dir / "scores.jsonl").open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    metrics = {**summarize_answers(rows, list(scorers)), "servers": servers}
+    # 채점은 생성과 다른 장비에서 할 수도 있어, 채점한 장비를 여기에 따로 적는다.
+    metrics = {
+        **summarize_answers(rows, list(scorers)),
+        "servers": servers,
+        "host": platform.node(),
+    }
     (run_dir / "metrics.json").write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
