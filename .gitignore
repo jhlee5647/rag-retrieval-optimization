@@ -1,0 +1,5 @@
+# uv가 만드는 가상환경과 도구 캐시
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
