@@ -12,6 +12,7 @@ CONFIG = """
 index: {url: http://127.0.0.1:6333, exact: true}
 chunking: {size: 512, overlap: 64}
 embedding: {base_url: http://127.0.0.1:8003/v1, model: m, revision: r}
+eval: {fields: {id: id, question: question, doc_ids: gold, type: type}, k: [1]}
 retrieve:
   - search: {mode: dense, top_k: 1}
 """
@@ -26,9 +27,9 @@ def setup(tmp_path):
     (docs / "doc-b.txt").write_text("beta")
     eval_file = tmp_path / "eval.jsonl"
     eval_file.write_text(
-        json.dumps({"id": "q1", "question": "beta?", "reference": "x"})
+        json.dumps({"id": "q1", "question": "beta?", "gold": ["doc-b"], "type": "basic"})
         + "\n"
-        + json.dumps({"id": "q2", "question": "alpha?", "reference": "y"})
+        + json.dumps({"id": "q2", "question": "alpha?", "gold": ["doc-b"], "type": "basic"})
         + "\n"
     )
     config_path = tmp_path / "naive.yaml"
@@ -94,3 +95,29 @@ def test_rejects_unregistered_node_before_index_check(setup, qdrant, embeddings,
     with pytest.raises(ValueError, match="serach"):
         run(setup, qdrant, embeddings, tmp_path)
     assert embeddings.queries == []
+
+
+def test_writes_retrieval_scores_and_metrics(setup, qdrant, embeddings, tmp_path):
+    """문항별 점수와 평균을 쓰고, 근거 문서가 없는 문항은 검색만 하고 지표에서 뺀다."""
+    # Arrange: q1은 근거 문서를 맞히고, q2는 놓치고, q3는 근거 문서가 지정되지 않았다
+    config_path, docs, eval_file = setup
+    rows = [
+        {"id": "q1", "question": "beta?", "gold": ["doc-b"], "type": "basic"},
+        {"id": "q2", "question": "alpha?", "gold": ["doc-b"], "type": "basic"},
+        {"id": "q3", "question": "gamma?", "gold": [], "type": "unanswerable"},
+    ]
+    eval_file.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    name = index_name(load_config(config_path), count_docs(docs))
+    add_index(qdrant, name, [("doc-a", "alpha"), ("doc-b", "beta")])
+
+    # Act
+    run_dir = run(setup, qdrant, embeddings, tmp_path)
+
+    # Assert
+    assert len((run_dir / "contexts.jsonl").read_text().splitlines()) == 3
+    scores = [json.loads(line) for line in (run_dir / "scores.jsonl").read_text().splitlines()]
+    assert [(s["id"], s["scores"]["recall@1"]) for s in scores] == [("q1", 1.0), ("q2", 0.0)]
+    metrics = json.loads((run_dir / "metrics.json").read_text())
+    assert (metrics["n_scored"], metrics["n_skipped"]) == (2, 1)
+    assert metrics["mean"]["recall@1"] == 0.5
+    assert list(metrics["by_type"]) == ["basic"]

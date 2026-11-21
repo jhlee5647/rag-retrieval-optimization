@@ -2,6 +2,9 @@
 
 import json
 from pathlib import Path
+from typing import Any
+
+from rag.config import EvalFields
 
 
 def count_docs(docs_dir: Path) -> int:
@@ -23,15 +26,20 @@ def count_docs(docs_dir: Path) -> int:
     return sum(1 for _ in docs_dir.glob("*.txt"))
 
 
-def read_questions(eval_file: Path) -> list[dict[str, str]]:
-    """평가 JSONL 파일에서 문항마다 `id`와 `question`을 읽는다.
+def read_questions(eval_file: Path, fields: EvalFields) -> list[dict[str, Any]]:
+    """평가 JSONL 파일에서 문항마다 `eval.fields`에 적힌 필드를 읽는다.
 
     Args:
         eval_file: 평가 JSONL 파일. 빈 줄은 건너뛴다.
+        fields: 이 도구가 쓰는 이름과 평가 파일의 필드 이름의 대응.
 
     Returns:
-        파일 순서대로 `{"id": ..., "question": ...}`의 목록.
+        파일 순서대로 `{"id", "question", "doc_ids", "type"}`의 목록. 키는 이 도구가 쓰는 이름이다.
+
+    Raises:
+        KeyError: 문항에 `fields`가 가리키는 필드가 없는 경우.
     """
     with eval_file.open(encoding="utf-8") as f:
         rows = [json.loads(line) for line in f if line.strip()]
-    return [{"id": row["id"], "question": row["question"]} for row in rows]
+    names = fields.model_dump()
+    return [{ours: row[theirs] for ours, theirs in names.items()} for row in rows]

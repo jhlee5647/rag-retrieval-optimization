@@ -14,6 +14,7 @@ VALID = """
 index: {url: http://127.0.0.1:6333}
 chunking: {size: 512, overlap: 64}
 embedding: {base_url: http://127.0.0.1:8003/v1, model: m, revision: r}
+eval: {fields: {id: id, question: question, doc_ids: gold, type: type}, k: [1, 5]}
 retrieve:
   - search: {mode: dense, top_k: 5}
 """
@@ -61,14 +62,16 @@ def test_rejects_misspelled_key(tmp_path):
 def test_rejects_unknown_top_level_key(tmp_path):
     """정의되지 않은 최상위 항목을 거부한다."""
     # Arrange
-    path = write(tmp_path, VALID + "eval: {k: [1, 5]}\n")
+    path = write(tmp_path, VALID + "evaluation: {k: [1, 5]}\n")
 
     # Act
     with pytest.raises(ValidationError) as exc:
         load_config(path)
 
     # Assert
-    assert [(e["type"], e["loc"]) for e in exc.value.errors()] == [("extra_forbidden", ("eval",))]
+    assert [(e["type"], e["loc"]) for e in exc.value.errors()] == [
+        ("extra_forbidden", ("evaluation",))
+    ]
 
 
 def test_rejects_step_with_two_nodes(tmp_path):
@@ -121,3 +124,14 @@ def test_accepts_localhost_server_url(tmp_path):
     # Assert
     assert config.index.url == "http://localhost:6333"
     assert config.embedding.base_url == "http://localhost:8003/v1"
+
+
+@pytest.mark.parametrize("k", ["[]", "[0, 5]"])
+def test_rejects_empty_or_non_positive_eval_k(tmp_path, k):
+    """검색 지표를 잴 순위가 없거나 1보다 작으면 거부한다."""
+    # Arrange
+    path = write(tmp_path, VALID.replace("k: [1, 5]", f"k: {k}"))
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match="eval.k"):
+        load_config(path)

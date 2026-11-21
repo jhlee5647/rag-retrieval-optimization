@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from rag.config import EvalFields
 from rag.data import count_docs, read_questions
 
 
@@ -27,21 +28,22 @@ def test_count_docs_rejects_missing_folder(tmp_path):
         count_docs(tmp_path / "nope")
 
 
-def test_read_questions_keeps_order_and_only_id_and_question(tmp_path):
-    """평가 파일 순서대로 id와 question만 읽고, 빈 줄은 건너뛴다."""
-    # Arrange
+def test_read_questions_maps_field_names_in_file_order(tmp_path):
+    """eval.fields에 적힌 평가 파일의 필드를 이 도구의 이름으로 바꿔, 파일 순서대로 읽는다."""
+    # Arrange: 평가 파일의 필드 이름이 이 도구의 이름과 다르고, 쓰지 않는 필드와 빈 줄이 있다
     rows = [
-        {"id": "q2", "question": "second?", "reference": "x"},
-        {"id": "q1", "question": "first?", "type": "basic"},
+        {"qid": "q2", "query": "second?", "expected": ["d1"], "kind": "basic", "reference": "x"},
+        {"qid": "q1", "query": "first?", "expected": [], "kind": "unanswerable"},
     ]
     path = tmp_path / "eval.jsonl"
     path.write_text("\n".join(json.dumps(r) for r in rows) + "\n\n", encoding="utf-8")
+    fields = EvalFields(id="qid", question="query", doc_ids="expected", type="kind")
 
     # Act
-    questions = read_questions(path)
+    questions = read_questions(path, fields)
 
     # Assert
     assert questions == [
-        {"id": "q2", "question": "second?"},
-        {"id": "q1", "question": "first?"},
+        {"id": "q2", "question": "second?", "doc_ids": ["d1"], "type": "basic"},
+        {"id": "q1", "question": "first?", "doc_ids": [], "type": "unanswerable"},
     ]

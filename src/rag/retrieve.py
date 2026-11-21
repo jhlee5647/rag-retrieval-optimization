@@ -1,4 +1,4 @@
-"""retrieve 명령: 평가 문항마다 검색해 결과를 실행 폴더에 쓴다.
+"""retrieve 명령: 평가 문항마다 검색하고 검색 지표를 계산해 실행 폴더에 쓴다.
 
     uv run --env-file .env python -m rag.retrieve configs/naive.yaml
 
@@ -18,6 +18,7 @@ from qdrant_client import QdrantClient
 from rag.config import Config, load_config
 from rag.data import count_docs, read_questions
 from rag.index import index_name, require_index
+from rag.metrics import question_scores, summarize
 from rag.pipeline import Resources, build_graph
 from rag.runs import create_run_dir
 
@@ -37,7 +38,10 @@ def retrieve(
     eval_file: Path,
     runs_root: Path,
 ) -> Path:
-    """평가 문항마다 검색 그래프를 돌려 `contexts.jsonl`과 config 사본을 쓴다.
+    """평가 문항마다 검색 그래프를 돌려 `contexts.jsonl`, 검색 지표, config 사본을 쓴다.
+
+    검색 지표는 문항별 점수 `scores.jsonl`과 평균 `metrics.json`이다. 근거 문서가 지정되지 않은 문항은
+    대조할 정답이 없어 지표에서 빼지만, 생성 단계가 그 문맥도 쓰므로 검색은 한다.
 
     검색을 시작하기 전에 노드 목록과 색인을 모두 확인한다. 실행 폴더는 검색이 끝난 뒤에 만들어,
     실패한 실행이 빈 폴더를 남기지 않게 한다.
@@ -72,7 +76,7 @@ def retrieve(
     graph = build_graph(config.retrieve, Resources(config=config, vectorstore=store))
     require_index(client, name)
 
-    questions = read_questions(eval_file)
+    questions = read_questions(eval_file, config.eval.fields)
     states = graph.batch(
         [{"question": q["question"]} for q in questions],
         config={"max_concurrency": CONCURRENCY},
@@ -82,6 +86,24 @@ def retrieve(
     with (run_dir / "contexts.jsonl").open("w", encoding="utf-8") as f:
         for q, state in zip(questions, states, strict=True):
             f.write(json.dumps({"id": q["id"], **state}, ensure_ascii=False) + "\n")
+
+    ks = config.eval.k
+    scored = [
+        {
+            "id": q["id"],
+            "type": q["type"],
+            "scores": question_scores(s["doc_ids"], q["doc_ids"], ks),
+        }
+        for q, s in zip(questions, states, strict=True)
+        if q["doc_ids"]
+    ]
+    with (run_dir / "scores.jsonl").open("w", encoding="utf-8") as f:
+        for row in scored:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    metrics = summarize(scored, skipped=len(questions) - len(scored))
+    (run_dir / "metrics.json").write_text(
+        json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     return run_dir
 
 
