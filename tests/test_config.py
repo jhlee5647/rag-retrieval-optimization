@@ -13,7 +13,7 @@ def write(tmp_path, text):
 VALID = """
 index: {url: http://127.0.0.1:6333}
 chunking: {size: 512, overlap: 64}
-embedding: {base_url: http://127.0.0.1:8003/v1, model: m, revision: r}
+embedding: {base_url: http://127.0.0.1:8003/v1, model: m, revision: r, max_input_tokens: 8192}
 eval: {fields: {id: id, question: question, doc_ids: gold, type: type}, k: [1, 5]}
 retrieve:
   - search: {mode: dense, top_k: 5}
@@ -134,4 +134,25 @@ def test_rejects_empty_or_non_positive_eval_k(tmp_path, k):
 
     # Act / Assert
     with pytest.raises(ValidationError, match="eval.k"):
+        load_config(path)
+
+
+@pytest.mark.parametrize(
+    "chunking, embedding_limit, message",
+    [
+        ("{size: 512, overlap: 512}", 8192, "overlap"),
+        ("{size: 9000, overlap: 64}", 8192, "max_input_tokens"),
+    ],
+    ids=["overlap-not-below-size", "size-over-input-limit"],
+)
+def test_rejects_chunking_that_cannot_be_indexed(tmp_path, chunking, embedding_limit, message):
+    """겹침이 청크 크기 이상이거나 청크 크기가 임베딩 입력 한도를 넘으면 실행 전에 거부한다."""
+    # Arrange
+    text = VALID.replace("{size: 512, overlap: 64}", chunking)
+    path = write(
+        tmp_path, text.replace("max_input_tokens: 8192", f"max_input_tokens: {embedding_limit}")
+    )
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match=message):
         load_config(path)

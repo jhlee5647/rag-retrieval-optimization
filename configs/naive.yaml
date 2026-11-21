@@ -4,6 +4,7 @@ embedding:
   base_url: http://127.0.0.1:8003/v1
   model: Qwen/Qwen3-Embedding-4B
   revision: 5cf2132abc99cad020ac570b19d031efec650f2b
+  max_input_tokens: 8192
   query_instruction: Given a web search query, retrieve relevant passages that answer the query
 eval:
   fields: {id: id, question: question, doc_ids: expected_doc_ids, type: type}
