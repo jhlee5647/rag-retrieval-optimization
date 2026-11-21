@@ -91,7 +91,7 @@ def retrieve(
     graph = build_graph(config.retrieve, Resources(config=config, vectorstore=store))
     if not has_index(client, name):
         print(
-            f"색인 {name}이 없어 문서 {doc_count}개로 새로 만든다. 문서 전체는 6.5시간 이상 걸린다"
+            f"색인 {name}이 없어 문서 {doc_count}개로 새로 만든다. 문서 전체는 하루 가까이 걸린다"
         )
         build_index(client, name, config, docs_dir, embeddings, token_len)
 
