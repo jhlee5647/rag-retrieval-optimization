@@ -182,3 +182,16 @@ def test_records_checked_servers_in_metrics(setup):
 
     # Assert
     assert json.loads((run_dir / "metrics.json").read_text())["servers"] == checked
+
+
+def test_records_host_name_in_metrics(setup, monkeypatch):
+    """채점은 생성과 다른 장비에서 할 수도 있다. 채점한 장비의 호스트 이름을 metrics.json에 남긴다."""
+    # Arrange
+    run_dir, eval_file = setup
+    monkeypatch.setattr("platform.node", lambda: "node-b")
+
+    # Act
+    score(run_dir, eval_file, fake_scorers([]))
+
+    # Assert
+    assert json.loads((run_dir / "metrics.json").read_text())["host"] == "node-b"

@@ -8,6 +8,7 @@
 import argparse
 import json
 import os
+import platform
 import sys
 import time
 from collections.abc import Callable
@@ -126,6 +127,8 @@ def retrieve(
     record = {
         "command": command,
         "git_commit": commit,
+        # 여러 장비의 실행 폴더를 합친 뒤에도 어느 장비의 실행인지 가린다.
+        "host": platform.node(),
         "doc_count": doc_count,
         # 평가 파일은 일부만 돌려도 파일 전체로 해시한다. 어떤 파일의 앞 몇 문항인지 가리기 위해서다.
         "eval_file_sha256": file_sha256(eval_file),

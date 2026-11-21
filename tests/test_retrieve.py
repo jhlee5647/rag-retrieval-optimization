@@ -193,3 +193,18 @@ def test_records_checked_servers(setup, qdrant, embeddings, tmp_path):
 
     # Assert
     assert json.loads((run_dir / "run.json").read_text())["servers"] == checked
+
+
+def test_records_host_name(setup, qdrant, embeddings, tmp_path, monkeypatch):
+    """여러 장비의 실행 폴더를 합친 뒤에도 어느 장비의 실행인지 가리도록, run.json에 호스트 이름을 남긴다."""
+    # Arrange
+    config_path, docs, _ = setup
+    name = index_name(load_config(config_path), count_docs(docs))
+    add_index(qdrant, name, [("doc-a", "alpha"), ("doc-b", "beta")])
+    monkeypatch.setattr("platform.node", lambda: "node-b")
+
+    # Act
+    run_dir = run(setup, qdrant, embeddings, tmp_path)
+
+    # Assert
+    assert json.loads((run_dir / "run.json").read_text())["host"] == "node-b"
