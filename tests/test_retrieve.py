@@ -1,4 +1,6 @@
+import hashlib
 import json
+import re
 
 import pytest
 from conftest import add_index
@@ -6,7 +8,7 @@ from conftest import add_index
 from rag.config import load_config
 from rag.data import count_docs
 from rag.index import index_name
-from rag.retrieve import retrieve
+from rag.retrieve import main, retrieve
 
 CONFIG = """
 index: {url: http://127.0.0.1:6333, exact: true}
@@ -37,7 +39,7 @@ def setup(tmp_path):
     return config_path, docs, eval_file
 
 
-def run(setup, qdrant, embeddings, tmp_path):
+def run(setup, qdrant, embeddings, tmp_path, limit=None):
     config_path, docs, eval_file = setup
     return retrieve(
         config_path,
@@ -47,6 +49,8 @@ def run(setup, qdrant, embeddings, tmp_path):
         docs_dir=docs,
         eval_file=eval_file,
         runs_root=tmp_path / "runs",
+        command=["python", "-m", "rag.retrieve", str(config_path)],
+        limit=limit,
     )
 
 
@@ -121,3 +125,50 @@ def test_writes_retrieval_scores_and_metrics(setup, qdrant, embeddings, tmp_path
     assert (metrics["n_scored"], metrics["n_skipped"]) == (2, 1)
     assert metrics["mean"]["recall@1"] == 0.5
     assert list(metrics["by_type"]) == ["basic"]
+
+
+def test_writes_run_record(setup, qdrant, embeddings, tmp_path):
+    """run.json에 명령, git 커밋, 문서 수, 평가 파일 해시, 색인 이름, 문항 제한, 소요 시간을 남긴다."""
+    # Arrange
+    config_path, docs, eval_file = setup
+    name = index_name(load_config(config_path), count_docs(docs))
+    add_index(qdrant, name, [("doc-a", "alpha"), ("doc-b", "beta")])
+
+    # Act
+    run_dir = run(setup, qdrant, embeddings, tmp_path)
+
+    # Assert
+    record = json.loads((run_dir / "run.json").read_text())
+    assert record["command"] == ["python", "-m", "rag.retrieve", str(config_path)]
+    assert re.fullmatch(r"[0-9a-f]{40}", record["git_commit"])
+    assert record["doc_count"] == 2
+    assert record["eval_file_sha256"] == hashlib.sha256(eval_file.read_bytes()).hexdigest()
+    assert record["index"] == name
+    assert record["limit"] is None
+    assert record["elapsed_seconds"] >= 0
+
+
+def test_limit_runs_only_first_questions(setup, qdrant, embeddings, tmp_path):
+    """limit을 주면 평가 파일의 앞 N문항만 검색하고 지표를 내며, 그 값을 run.json에 적는다."""
+    # Arrange
+    config_path, docs, _ = setup
+    name = index_name(load_config(config_path), count_docs(docs))
+    add_index(qdrant, name, [("doc-a", "alpha"), ("doc-b", "beta")])
+
+    # Act
+    run_dir = run(setup, qdrant, embeddings, tmp_path, limit=1)
+
+    # Assert
+    contexts = (run_dir / "contexts.jsonl").read_text().splitlines()
+    assert [json.loads(line)["id"] for line in contexts] == ["q1"]
+    assert json.loads((run_dir / "metrics.json").read_text())["n_scored"] == 1
+    assert json.loads((run_dir / "run.json").read_text())["limit"] == 1
+    assert embeddings.queries and len(embeddings.queries) == 1
+
+
+@pytest.mark.parametrize("value", ["0", "-3"])
+def test_rejects_limit_below_one(value, capsys):
+    """--limit이 1보다 작으면 config를 읽거나 서버에 연결하기 전에 거부한다."""
+    with pytest.raises(SystemExit):
+        main(["configs/does-not-exist.yaml", "--limit", value])
+    assert "1 이상" in capsys.readouterr().err

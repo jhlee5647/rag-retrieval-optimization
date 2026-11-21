@@ -8,6 +8,8 @@
 import argparse
 import json
 import os
+import sys
+import time
 from pathlib import Path
 
 from langchain_core.embeddings import Embeddings
@@ -20,7 +22,7 @@ from rag.data import count_docs, read_questions
 from rag.index import index_name, require_index
 from rag.metrics import question_scores, summarize
 from rag.pipeline import Resources, build_graph
-from rag.runs import create_run_dir
+from rag.runs import create_run_dir, file_sha256, git_commit
 
 # 문서 전체에 대한 정확 검색은 클라이언트의 기본 timeout 5초를 넘는다 (장비에서 측정).
 QDRANT_TIMEOUT_SECONDS = 120
@@ -37,11 +39,14 @@ def retrieve(
     docs_dir: Path,
     eval_file: Path,
     runs_root: Path,
+    command: list[str],
+    limit: int | None = None,
 ) -> Path:
     """평가 문항마다 검색 그래프를 돌려 `contexts.jsonl`, 검색 지표, config 사본을 쓴다.
 
-    검색 지표는 문항별 점수 `scores.jsonl`과 평균 `metrics.json`이다. 근거 문서가 지정되지 않은 문항은
-    대조할 정답이 없어 지표에서 빼지만, 생성 단계가 그 문맥도 쓰므로 검색은 한다.
+    무엇으로 돌렸는지는 `run.json`에 남긴다. 검색 지표는 문항별 점수 `scores.jsonl`과 평균
+    `metrics.json`이다. 근거 문서가 지정되지 않은 문항은 대조할 정답이 없어 지표에서 빼지만, 생성
+    단계가 그 문맥도 쓰므로 검색은 한다.
 
     검색을 시작하기 전에 노드 목록과 색인을 모두 확인한다. 실행 폴더는 검색이 끝난 뒤에 만들어,
     실패한 실행이 빈 폴더를 남기지 않게 한다.
@@ -54,6 +59,8 @@ def retrieve(
         docs_dir: 문서 폴더. 색인 이름을 계산하는 데 파일 수만 쓴다.
         eval_file: 평가 JSONL 파일.
         runs_root: 실행 폴더들의 최상위 폴더. 보통 `runs`.
+        command: 실행한 명령줄. `run.json`에 그대로 적는다.
+        limit: 평가 파일의 앞 몇 문항만 돌릴지. None이면 전부 돌린다.
 
     Returns:
         `<runs_root>/retrieve/<config 이름>/<실행 시각>/`.
@@ -62,6 +69,8 @@ def retrieve(
         LookupError: 색인 조건에 맞는 색인이 Qdrant에 없는 경우.
         ValueError: 등록되지 않은 노드 이름이 있는 경우.
     """
+    start = time.monotonic()
+    commit = git_commit()
     doc_count = count_docs(docs_dir)
     name = index_name(config, doc_count)
     print(f"문서 {doc_count}개, 색인 {name}")
@@ -76,7 +85,7 @@ def retrieve(
     graph = build_graph(config.retrieve, Resources(config=config, vectorstore=store))
     require_index(client, name)
 
-    questions = read_questions(eval_file, config.eval.fields)
+    questions = read_questions(eval_file, config.eval.fields)[:limit]
     states = graph.batch(
         [{"question": q["question"]} for q in questions],
         config={"max_concurrency": CONCURRENCY},
@@ -104,7 +113,25 @@ def retrieve(
     (run_dir / "metrics.json").write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
+    record = {
+        "command": command,
+        "git_commit": commit,
+        "doc_count": doc_count,
+        # 평가 파일은 일부만 돌려도 파일 전체로 해시한다. 어떤 파일의 앞 몇 문항인지 가리기 위해서다.
+        "eval_file_sha256": file_sha256(eval_file),
+        "index": name,
+        "limit": limit,
+        "elapsed_seconds": round(time.monotonic() - start, 1),
+    }
+    (run_dir / "run.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     return run_dir
+
+
+def _positive_int(text: str) -> int:
+    value = int(text)
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"1 이상이어야 한다: {text}")
+    return value
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -115,6 +142,11 @@ def main(argv: list[str] | None = None) -> None:
     """
     parser = argparse.ArgumentParser(prog="python -m rag.retrieve", description=__doc__)
     parser.add_argument("config", type=Path, help="config 파일 경로")
+    parser.add_argument(
+        "--limit", type=_positive_int, help="평가 파일의 앞 N문항만 돌린다. 빼면 전부 돌린다"
+    )
+    if argv is None:
+        argv = sys.argv[1:]
     args = parser.parse_args(argv)
 
     config = load_config(args.config)
@@ -133,6 +165,8 @@ def main(argv: list[str] | None = None) -> None:
         docs_dir=Path(os.environ["DOCS_DIR"]),
         eval_file=Path(os.environ["EVAL_FILE"]),
         runs_root=Path("runs"),
+        command=["python", "-m", "rag.retrieve", *argv],
+        limit=args.limit,
     )
     print(run_dir)
 
