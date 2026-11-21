@@ -82,8 +82,20 @@ class Eval(Strict):
     k: list[PositiveInt] = Field(min_length=1)
 
 
+class Generation(Strict):
+    """생성 서버와 모델, 토큰 한도, 온도."""
+
+    base_url: LocalUrl
+    model: str
+    revision: str
+    # 생성 서버가 받는 요청 하나(입력 + 출력)의 최대 토큰 수. 서버의 --max-model-len 이하로 둔다.
+    max_model_len: PositiveInt
+    max_tokens: PositiveInt
+    temperature: float = Field(ge=0)
+
+
 class Config(Strict):
-    """검색에 필요한 config 전체."""
+    """config 전체. `generation`과 `generate`를 빼면 검색만 하는 config다."""
 
     index: Index
     chunking: Chunking
@@ -91,14 +103,22 @@ class Config(Strict):
     eval: Eval
     # 항목마다 `{노드 이름: 인자}` 하나다. 적힌 순서대로 노드를 잇는다.
     retrieve: list[dict[str, dict[str, Any]]] = Field(min_length=1)
+    generation: Generation | None = None
+    generate: list[dict[str, dict[str, Any]]] | None = Field(default=None, min_length=1)
 
-    @field_validator("retrieve")
+    @field_validator("retrieve", "generate")
     @classmethod
-    def _one_node_per_step(cls, steps: list[dict[str, dict[str, Any]]]):
-        for step in steps:
+    def _one_node_per_step(cls, steps: list[dict[str, dict[str, Any]]] | None, info):
+        for step in steps or []:
             if len(step) != 1:
-                raise ValueError(f"retrieve의 항목 하나에는 노드 하나만 적는다: {step}")
+                raise ValueError(f"{info.field_name}의 항목 하나에는 노드 하나만 적는다: {step}")
         return steps
+
+    @model_validator(mode="after")
+    def _generation_with_nodes(self):
+        if (self.generation is None) != (self.generate is None):
+            raise ValueError("generation과 generate는 함께 적거나 함께 뺀다")
+        return self
 
     @model_validator(mode="after")
     def _chunks_fit(self):
