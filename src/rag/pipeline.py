@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypedDict
 
+from langchain_core.language_models import BaseChatModel
 from langchain_qdrant import QdrantVectorStore
 from langgraph.graph import END, START, StateGraph
 
@@ -23,14 +24,16 @@ class State(TypedDict, total=False):
     contexts: list[str]
     # contexts와 같은 순서로, 청크마다 그 청크가 나온 문서 ID다.
     doc_ids: list[str]
+    answer: str
 
 
 @dataclass(frozen=True)
 class Resources:
-    """노드가 쓰는 config와 외부 자원."""
+    """노드가 쓰는 config와 외부 자원. 검색 단계는 벡터 저장소를, 생성 단계는 생성 모델을 쓴다."""
 
     config: Config
-    vectorstore: QdrantVectorStore
+    vectorstore: QdrantVectorStore | None = None
+    llm: BaseChatModel | None = None
 
 
 # 노드 하나. config의 인자와 자원을 받아, State를 받아 바뀐 필드만 돌려주는 함수를 만든다.

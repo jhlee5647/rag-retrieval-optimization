@@ -11,3 +11,12 @@ eval:
   k: [1, 5]
 retrieve:
   - search: {mode: dense, top_k: 5}
+generation:
+  base_url: http://127.0.0.1:8001/v1
+  model: Qwen/Qwen3.8-27B-FP8
+  revision: c3a462cc3d38cf351f3b26cbd763469eeb74ef81
+  max_model_len: 32768
+  max_tokens: 512
+  temperature: 0
+generate:
+  - answer: {prompt: prompts/answer.txt}

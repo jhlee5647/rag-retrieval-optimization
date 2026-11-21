@@ -156,3 +156,40 @@ def test_rejects_chunking_that_cannot_be_indexed(tmp_path, chunking, embedding_l
     # Act / Assert
     with pytest.raises(ValidationError, match=message):
         load_config(path)
+
+
+GENERATION = """
+generation:
+  base_url: http://127.0.0.1:8001/v1
+  model: g
+  revision: r
+  max_model_len: 32768
+  max_tokens: 512
+  temperature: 0
+"""
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [GENERATION, "generate:\n  - answer: {prompt: prompts/answer.txt}\n"],
+    ids=["generation-only", "generate-only"],
+)
+def test_rejects_generation_without_its_nodes(tmp_path, extra):
+    """generation과 generate는 함께 적거나 함께 뺀다. 하나만 적으면 거부한다."""
+    # Arrange
+    path = write(tmp_path, VALID + extra)
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match="함께"):
+        load_config(path)
+
+
+def test_rejects_non_local_generation_server(tmp_path):
+    """생성 서버 주소도 127.0.0.1이나 localhost가 아니면 거부한다."""
+    # Arrange
+    text = VALID + GENERATION.replace("127.0.0.1:8001", "10.0.0.5:8001")
+    path = write(tmp_path, text + "generate:\n  - answer: {prompt: prompts/answer.txt}\n")
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match="127.0.0.1이나 localhost"):
+        load_config(path)

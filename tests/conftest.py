@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 from langchain_core.embeddings import Embeddings
+from langchain_core.messages import AIMessage
 from qdrant_client import QdrantClient, models
 
 from rag.config import Config
@@ -96,3 +97,14 @@ def qdrant() -> QdrantClient:
 @pytest.fixture
 def embeddings() -> KeywordEmbeddings:
     return KeywordEmbeddings()
+
+
+class EchoLLM:
+    """받은 프롬프트를 `prompts`에 남기고, 그 끝부분을 답으로 돌려주는 결정적인 가짜 생성 모델."""
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    def invoke(self, prompt: str) -> AIMessage:
+        self.prompts.append(prompt)
+        return AIMessage(content=f"answer: {prompt.splitlines()[-1]}")
