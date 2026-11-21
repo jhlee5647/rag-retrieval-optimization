@@ -21,6 +21,9 @@ from rag.metrics import retrieval_hit, summarize_answers
 METRICS = ["faithfulness", "response_relevancy", "factual_correctness"]
 # 동시에 채점하는 문항 수. 생성 단계와 같은 값을 쓴다.
 CONCURRENCY = 8
+# 채점 모델의 출력 한도(토큰). RAGAS 기본값 1024로는 긴 답의 주장 목록이 잘려 점수가 빈다(실측 20문항 중 2).
+# 입력은 문맥 몇 개와 답이라 judge 서버의 요청 한도(32768)에 넉넉히 들어간다.
+JUDGE_MAX_TOKENS = 4096
 
 # 문항 하나의 `{"question", "answer", "contexts", "reference"}`를 받아 점수 하나를 내는 채점기.
 Scorer = Callable[[dict[str, Any]], Awaitable[float]]
@@ -111,6 +114,7 @@ def ragas_scorers(config: Config) -> dict[str, Scorer]:
         config.judge.model,
         client=AsyncOpenAI(base_url=config.judge.base_url, api_key="EMPTY"),
         temperature=0,
+        max_tokens=JUDGE_MAX_TOKENS,
     )
     embeddings = embedding_factory(
         "openai",
