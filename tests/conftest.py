@@ -44,6 +44,10 @@ def make_config(**overrides) -> Config:
             "model": "test/model",
             "revision": "abc",
         },
+        "eval": {
+            "fields": {"id": "id", "question": "question", "doc_ids": "gold", "type": "type"},
+            "k": [1, 2],
+        },
         "retrieve": [{"search": {"mode": "dense", "top_k": 2}}],
     }
     raw.update(overrides)

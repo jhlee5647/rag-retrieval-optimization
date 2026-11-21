@@ -5,7 +5,7 @@ from typing import Annotated, Any
 from urllib.parse import urlsplit
 
 import yaml
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, PositiveInt, field_validator
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
 
@@ -56,12 +56,29 @@ class Embedding(Strict):
     )
 
 
+class EvalFields(Strict):
+    """이 도구가 쓰는 이름(왼쪽)에 대응하는 평가 파일의 필드 이름(오른쪽)."""
+
+    id: str
+    question: str
+    doc_ids: str
+    type: str
+
+
+class Eval(Strict):
+    """평가 파일의 필드 이름과 검색 지표를 잴 순위."""
+
+    fields: EvalFields
+    k: list[PositiveInt] = Field(min_length=1)
+
+
 class Config(Strict):
     """검색에 필요한 config 전체."""
 
     index: Index
     chunking: Chunking
     embedding: Embedding
+    eval: Eval
     # 항목마다 `{노드 이름: 인자}` 하나다. 적힌 순서대로 노드를 잇는다.
     retrieve: list[dict[str, dict[str, Any]]] = Field(min_length=1)
 
