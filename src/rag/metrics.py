@@ -1,6 +1,6 @@
-"""검색 지표: 가져온 문서와 근거 문서를 대조해 문항별 점수와 평균을 낸다.
+"""검색 지표와, 문항별 점수의 집계.
 
-정의는 docs/design.md의 "검색 지표"를 따른다. 관련 여부는 근거 문서인지 아닌지(0과 1)로만 본다.
+검색 지표의 정의는 docs/design.md의 "검색 지표"를 따른다. 관련 여부는 근거 문서인지 아닌지(0과 1)로만 본다.
 """
 
 import math
@@ -65,4 +65,50 @@ def summarize(rows: list[dict[str, Any]], skipped: int) -> dict[str, Any]:
         "n_skipped": skipped,
         "mean": _mean(rows),
         "by_type": {t: {"n": len(rs), "mean": _mean(rs)} for t, rs in sorted(by_type.items())},
+    }
+
+
+def retrieval_hit(doc_ids: list[str], gold: list[str]) -> str:
+    """근거 문서를 가져온 정도: `all`(전부), `some`(일부), `none`(못 가져옴), `no_gold`(지정 안 됨)."""
+    if not gold:
+        return "no_gold"
+    found = set(gold) & set(doc_ids)
+    if found == set(gold):
+        return "all"
+    return "some" if found else "none"
+
+
+def _present_mean(rows: list[dict[str, Any]], key: str) -> float | None:
+    values = [row["scores"][key] for row in rows if row["scores"][key] is not None]
+    return sum(values) / len(values) if values else None
+
+
+def summarize_answers(rows: list[dict[str, Any]], keys: list[str]) -> dict[str, Any]:
+    """생성 지표의 전체 평균, 유형별 평균, 검색 적중별 평균을 낸다.
+
+    채점 모델이 출력 형식을 못 맞춰 빈 점수(None)는 0으로 채우지 않고 평균에서 빼며, 지표마다 그 수를 센다.
+
+    Args:
+        rows: 문항마다 `{"id", "type", "hit", "scores": {지표: 점수 또는 None}}`.
+        keys: 지표 이름 목록.
+
+    Returns:
+        `{"n", "empty", "mean", "by_type", "by_hit"}`. 나눈 평균은 `{값: {"n", "mean"}}`이다.
+    """
+
+    def mean(rs: list[dict[str, Any]]) -> dict[str, float | None]:
+        return {key: _present_mean(rs, key) for key in keys}
+
+    def by(field: str) -> dict[str, Any]:
+        groups = defaultdict(list)
+        for row in rows:
+            groups[row[field]].append(row)
+        return {v: {"n": len(rs), "mean": mean(rs)} for v, rs in sorted(groups.items())}
+
+    return {
+        "n": len(rows),
+        "empty": {key: sum(row["scores"][key] is None for row in rows) for key in keys},
+        "mean": mean(rows),
+        "by_type": by("type"),
+        "by_hit": by("hit"),
     }

@@ -7,7 +7,7 @@ embedding:
   max_input_tokens: 8192
   query_instruction: Given a web search query, retrieve relevant passages that answer the query
 eval:
-  fields: {id: id, question: question, doc_ids: expected_doc_ids, type: type}
+  fields: {id: id, question: question, answer: reference, doc_ids: expected_doc_ids, type: type}
   k: [1, 5]
 retrieve:
   - search: {mode: dense, top_k: 5}
@@ -20,3 +20,7 @@ generation:
   temperature: 0
 generate:
   - answer: {prompt: prompts/answer.txt}
+judge:
+  base_url: http://127.0.0.1:8002/v1
+  model: RedHatAI/gemma-4-26B-A4B-it-NVFP4
+  revision: 5557756b8dce33ac72f2bd702b11729fdba3b839
