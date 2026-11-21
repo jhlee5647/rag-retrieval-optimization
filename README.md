@@ -78,6 +78,7 @@ uv run --env-file .env python -m rag.compare
 - `retrieve`는 config의 청크·임베딩 조건과 문서 수로 색인 이름을 계산한다. 같은 조건의 색인이 없으면 문서를 잘라 새로 만든다. 문서 1,000개에 약 2분이고, 문서 전체는 하루 가까이 걸린다.
 - `generate`는 config의 검색 조건이 `--contexts`의 검색 실행과 다르면 거부한다. 검색 결과를 고정한 채 생성 구성만 바꿔 비교하는 용도다.
 - `score`는 그 생성 실행 폴더에 점수를 쓴다. 이미 채점한 폴더는 덮어쓰지 않는다.
+- `split`(`python -m rag.split configs/naive.yaml`)은 `EVAL_FILE`을 문항 유형별로 반씩 나눠 그 옆에 `<이름>-dev.jsonl`과 `<이름>-test.jsonl`을 쓴다. 구성을 고르는 문항과 확인하는 문항을 나눌 때 쓰고, 나눈 뒤 `.env`의 `EVAL_FILE`을 쓸 파일로 바꾼다.
 
 ## 결과 읽는 법
 
