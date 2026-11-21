@@ -11,13 +11,13 @@ def write(path, data):
 
 def test_prints_retrieval_and_generation_tables(tmp_path):
     """검색 실행끼리, 생성 실행끼리 표를 따로 내고, 생성 실행에는 사용한 검색 실행을 보여 준다."""
-    # Arrange: eval.k가 다른 검색 실행 둘, 지표 전의 검색 실행 하나, 채점한 생성 실행 하나와 안 한 것 하나
+    # Arrange: eval.k가 서로 다른 검색 실행 둘(뒤의 실행에만 있는 지표도 칸이 생긴다), 지표 전의 검색 실행 하나, 채점한 생성 실행 하나와 안 한 것 하나
     runs = tmp_path / "runs"
     mean_a = {"recall@1": 0.5, "recall@5": 1.0}
     write(
         runs / "retrieve/naive/20260101-000000", {"metrics.json": {"n_scored": 2, "mean": mean_a}}
     )
-    mean_b = {"recall@1": 0.25}
+    mean_b = {"recall@1": 0.25, "recall@10": 0.75}
     write(
         runs / "retrieve/other/20260102-000000", {"metrics.json": {"n_scored": 4, "mean": mean_b}}
     )
@@ -42,10 +42,10 @@ def test_prints_retrieval_and_generation_tables(tmp_path):
     assert out == (
         "## 검색 실행\n"
         "\n"
-        "| 실행 | 문항 | recall@1 | recall@5 |\n"
-        "|---|---|---|---|\n"
-        "| naive/20260101-000000 | 2 | 0.500 | 1.000 |\n"
-        "| other/20260102-000000 | 4 | 0.250 | - |\n"
+        "| 실행 | 문항 | recall@1 | recall@5 | recall@10 |\n"
+        "|---|---|---|---|---|\n"
+        "| naive/20260101-000000 | 2 | 0.500 | 1.000 | - |\n"
+        "| other/20260102-000000 | 4 | 0.250 | - | 0.750 |\n"
         "\n"
         "## 생성 실행\n"
         "\n"
