@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 
@@ -131,3 +132,86 @@ def test_start_stops_waiting_when_container_exits(servers, docker):
     # Act / Assert
     with pytest.raises(RuntimeError, match="docker logs rag-judge"):
         serve.start("judge", servers, ENV)
+
+
+def test_download_pins_image_and_model_revision(servers):
+    """모델 서버는 고정한 이미지를 받고, 그 이미지의 hf로 고정 리비전의 모델을 HF_HOME에 받는다."""
+    # Act
+    commands = serve.docker_download_commands("judge", servers, ENV)
+
+    # Assert
+    assert commands[0] == ["docker", "pull", servers.vllm.image]
+    run = " ".join(commands[1])
+    assert run.startswith("docker run --rm --entrypoint hf")
+    assert "-e HF_HUB_DISABLE_TELEMETRY=1" in run
+    assert "-v /models/hf:/models/hf" in run
+    assert commands[1][-4:] == [
+        "download",
+        "RedHatAI/gemma-4-26B-A4B-it-NVFP4",
+        "--revision",
+        "5557756b8dce33ac72f2bd702b11729fdba3b839",
+    ]
+    assert serve.docker_download_commands("qdrant", servers, ENV) == [
+        ["docker", "pull", servers.qdrant.image]
+    ]
+
+
+URL, MODEL, REV = "http://127.0.0.1:8003/v1", "Qwen/Qwen3-Embedding-4B", "5cf2"
+
+
+@pytest.fixture
+def running(monkeypatch):
+    """포트에 떠 있는 컨테이너와 /v1/models 응답을 정해 쓰는 가짜."""
+
+    def make(names, args, served):
+        def run(cmd, **kwargs):
+            if cmd[1] == "ps":
+                return subprocess.CompletedProcess(cmd, 0, "\n".join(names), "")
+            return subprocess.CompletedProcess(cmd, 0, json.dumps(args) + "|img@sha256:x\n", "")
+
+        monkeypatch.setattr(serve.subprocess, "run", run)
+        response = httpx.Response(200, json={"data": [{"id": m} for m in served]})
+        monkeypatch.setattr(serve.httpx, "get", lambda url, timeout: response)
+
+    return make
+
+
+def test_check_model_records_running_container(running):
+    """포트의 컨테이너 인자와 /v1/models가 config와 같으면 실행 기록에 남길 값을 돌려준다."""
+    # Arrange
+    running(
+        ["rag-embed"],
+        ["serve", "--model", MODEL, "--revision", REV, "--runner", "pooling"],
+        [MODEL],
+    )
+
+    # Act
+    record = serve.check_model("embed", URL, MODEL, REV)
+
+    # Assert
+    assert record == {
+        "container": "rag-embed",
+        "image": "img@sha256:x",
+        "model": MODEL,
+        "revision": REV,
+    }
+
+
+@pytest.mark.parametrize(
+    "names, args, served, message",
+    [
+        (["rag-embed"], ["--model", MODEL, "--revision", "other"], [MODEL], "다르다"),
+        ([], [], [MODEL], "하나가 아니다"),
+        (["rag-embed"], ["--model", MODEL, "--revision", REV], ["other/model"], "응답하지"),
+    ],
+    ids=["revision-differs", "no-container", "served-name-differs"],
+)
+def test_check_model_refuses_with_start_command(running, names, args, served, message):
+    """리비전이 다르거나, 포트에 컨테이너가 없거나, 서버가 다른 이름을 응답하면 띄울 명령과 함께 멈춘다."""
+    # Arrange
+    running(names, args, served)
+
+    # Act / Assert
+    with pytest.raises(RuntimeError, match=message) as exc:
+        serve.check_model("embed", URL, MODEL, REV)
+    assert "rag.serve start embed" in str(exc.value)
