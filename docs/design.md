@@ -403,7 +403,10 @@ RAGAS_DO_NOT_TRACK=true
 
 - langsmith는 추적 여부를 `LANGSMITH_TRACING_V2`, `LANGCHAIN_TRACING_V2`, `LANGSMITH_TRACING`, `LANGCHAIN_TRACING` 순서로 보고, 처음 값이 있는 것을 따른다. 그래서 넷 다 끈다.
 - `LANGGRAPH_CLI_NO_ANALYTICS`는 langgraph-cli가 읽는데, langgraph-cli는 설치돼 있지 않아 뺐다.
-- 4번(외부 접속 차단)은 감사 훅으로 `socket.connect`, `socket.sendto`, `socket.sendmsg`를 검사한다. 루프백 주소(`127.0.0.0/8`, `::1`)와 `localhost`만 통과시킨다. Python 소켓을 거치지 않는 C·Rust 확장의 접속(grpcio, hf-xet)은 막지 못한다.
+- 4번(외부 접속 차단)은 감사 훅으로 `socket.connect`, `socket.sendto`, `socket.sendmsg`를 검사한다. 루프백 주소(`127.0.0.0/8`, `::1`)와 `localhost`만 통과시킨다. 다음은 막지 못한다.
+  - DNS 조회. 바깥 호스트 이름이 DNS 서버에 질의된다. 이름만 나가고 접속은 막힌다.
+  - Python 소켓을 거치지 않는 C·Rust 확장의 접속(grpcio, hf-xet).
+  - 자식 프로세스. 감사 훅은 물려지지 않는다.
 
 컨테이너는 이 프로세스 밖이라 4번이 닿지 않는다. 컨테이너는 포트를 `127.0.0.1`에만 열고, 통계 전송을 끄고(`VLLM_NO_USAGE_STATS=1`, `QDRANT__TELEMETRY_DISABLED=true`), 오프라인(`HF_HUB_OFFLINE=1`)으로 띄운다. 컨테이너의 외부 송신까지 확실히 막으려면 장비 방화벽에서 차단해야 한다.
 
