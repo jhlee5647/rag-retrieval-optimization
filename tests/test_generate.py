@@ -47,7 +47,7 @@ def setup(tmp_path):
     return config_path, contexts_dir, prompt
 
 
-def run(config_path, contexts_dir, llm, tmp_path):
+def run(config_path, contexts_dir, llm, tmp_path, servers=None):
     return generate(
         config_path,
         load_config(config_path),
@@ -55,6 +55,7 @@ def run(config_path, contexts_dir, llm, tmp_path):
         contexts_dir=contexts_dir,
         runs_root=tmp_path / "out",
         command=["python", "-m", "rag.generate", str(config_path)],
+        servers=servers,
     )
 
 
@@ -128,3 +129,16 @@ def test_main_rejects_config_without_generation(setup, tmp_path, capsys):
     with pytest.raises(SystemExit):
         main([str(retrieval_only), "--contexts", str(contexts_dir)])
     assert "generation" in capsys.readouterr().err
+
+
+def test_records_checked_servers(setup, tmp_path):
+    """시작할 때 대조한 생성 서버 모델을 run.json에 남긴다."""
+    # Arrange
+    config_path, contexts_dir, _ = setup
+    checked = {"gen": {"container": "rag-gen", "image": "i", "model": "g", "revision": "r"}}
+
+    # Act
+    run_dir = run(config_path, contexts_dir, EchoLLM(), tmp_path, servers=checked)
+
+    # Assert
+    assert json.loads((run_dir / "run.json").read_text())["servers"] == checked

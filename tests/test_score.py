@@ -169,3 +169,16 @@ def test_stops_without_writing_when_a_metric_is_empty_everywhere(setup):
     with pytest.raises(RuntimeError, match="faithfulness"):
         score(run_dir, eval_file, scorers)
     assert not (run_dir / "scores.jsonl").exists()
+
+
+def test_records_checked_servers_in_metrics(setup):
+    """시작할 때 대조한 채점·임베딩 서버 모델을 metrics.json에 남긴다."""
+    # Arrange
+    run_dir, eval_file = setup
+    checked = {"judge": {"model": "j"}, "embed": {"model": "m"}}
+
+    # Act
+    score(run_dir, eval_file, fake_scorers([]), checked)
+
+    # Assert
+    assert json.loads((run_dir / "metrics.json").read_text())["servers"] == checked

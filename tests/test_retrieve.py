@@ -39,7 +39,7 @@ def setup(tmp_path):
     return config_path, docs, eval_file
 
 
-def run(setup, qdrant, embeddings, tmp_path, limit=None):
+def run(setup, qdrant, embeddings, tmp_path, limit=None, servers=None):
     config_path, docs, eval_file = setup
     return retrieve(
         config_path,
@@ -53,6 +53,7 @@ def run(setup, qdrant, embeddings, tmp_path, limit=None):
         # 문서가 짧아 글자 수로 세도 청크 하나씩이다
         token_len=len,
         limit=limit,
+        servers=servers,
     )
 
 
@@ -177,3 +178,18 @@ def test_rejects_limit_below_one(value, capsys):
     with pytest.raises(SystemExit):
         main(["configs/does-not-exist.yaml", "--limit", value])
     assert "1 이상" in capsys.readouterr().err
+
+
+def test_records_checked_servers(setup, qdrant, embeddings, tmp_path):
+    """시작할 때 대조한 서버 모델을 run.json에 남긴다."""
+    # Arrange
+    config_path, docs, _ = setup
+    name = index_name(load_config(config_path), count_docs(docs))
+    add_index(qdrant, name, [("doc-a", "alpha"), ("doc-b", "beta")])
+    checked = {"embed": {"container": "rag-embed", "image": "i", "model": "m", "revision": "r"}}
+
+    # Act
+    run_dir = run(setup, qdrant, embeddings, tmp_path, servers=checked)
+
+    # Assert
+    assert json.loads((run_dir / "run.json").read_text())["servers"] == checked

@@ -17,6 +17,7 @@ from typing import Any
 from rag.config import Config, load_config
 from rag.data import read_questions
 from rag.metrics import retrieval_hit, summarize_answers
+from rag.serve import check_model
 
 METRICS = ["faithfulness", "response_relevancy", "factual_correctness"]
 # 동시에 채점하는 문항 수. 생성 단계와 같은 값을 쓴다.
@@ -29,7 +30,12 @@ JUDGE_MAX_TOKENS = 4096
 Scorer = Callable[[dict[str, Any]], Awaitable[float]]
 
 
-def score(run_dir: Path, eval_file: Path, scorers: dict[str, Scorer]) -> dict[str, Any]:
+def score(
+    run_dir: Path,
+    eval_file: Path,
+    scorers: dict[str, Scorer],
+    servers: dict[str, dict[str, str]] | None = None,
+) -> dict[str, Any]:
     """생성 실행 폴더의 답을 채점해 `scores.jsonl`과 `metrics.json`을 그 폴더에 쓴다.
 
     채점에 실패한 지표는 그 문항만 빈 점수(None)로 두고 계속한다.
@@ -38,6 +44,7 @@ def score(run_dir: Path, eval_file: Path, scorers: dict[str, Scorer]) -> dict[st
         run_dir: `generate`의 실행 폴더. `config.yaml`과 `results.jsonl`을 읽는다.
         eval_file: 평가 JSONL 파일. 그 폴더의 config에 적힌 `eval.fields`로 읽는다.
         scorers: 지표 이름마다 채점기.
+        servers: 시작할 때 대조한 서버 모델. `metrics.json`에 함께 적는다.
 
     Returns:
         `metrics.json`에 쓴 집계.
@@ -65,7 +72,7 @@ def score(run_dir: Path, eval_file: Path, scorers: dict[str, Scorer]) -> dict[st
     with (run_dir / "scores.jsonl").open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    metrics = summarize_answers(rows, list(scorers))
+    metrics = {**summarize_answers(rows, list(scorers)), "servers": servers}
     (run_dir / "metrics.json").write_text(
         json.dumps(metrics, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -152,7 +159,13 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     config = load_config(args.run_dir / "config.yaml")
-    metrics = score(args.run_dir, Path(os.environ["EVAL_FILE"]), ragas_scorers(config))
+    j, e = config.judge, config.embedding
+    servers = {
+        "judge": check_model("judge", j.base_url, j.model, j.revision),
+        "embed": check_model("embed", e.base_url, e.model, e.revision),
+    }
+    eval_file = Path(os.environ["EVAL_FILE"])
+    metrics = score(args.run_dir, eval_file, ragas_scorers(config), servers)
     print(json.dumps({"mean": metrics["mean"], "empty": metrics["empty"]}, ensure_ascii=False))
 
 

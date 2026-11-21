@@ -16,6 +16,7 @@ from langchain_openai import ChatOpenAI
 from rag.config import Config, load_config
 from rag.pipeline import Resources, build_graph
 from rag.runs import create_run_dir, git_commit
+from rag.serve import check_model
 
 # 검색 실행에 쓰인 config와 같아야 하는 항목. 다르면 생성 실행의 config 사본이 실제 검색 조건과 어긋난다.
 RETRIEVAL_PARTS = ("index", "chunking", "embedding", "eval", "retrieve")
@@ -34,6 +35,7 @@ def generate(
     contexts_dir: Path,
     runs_root: Path,
     command: list[str],
+    servers: dict[str, dict[str, str]] | None = None,
 ) -> Path:
     """검색 실행 폴더의 문맥으로 생성 그래프를 돌려 답과 실행 기록을 쓴다.
 
@@ -47,6 +49,7 @@ def generate(
         contexts_dir: `retrieve`의 실행 폴더. `config.yaml`과 `contexts.jsonl`을 읽는다.
         runs_root: 실행 폴더들의 최상위 폴더. 보통 `runs`.
         command: 실행한 명령줄. `run.json`에 그대로 적는다.
+        servers: 시작할 때 대조한 서버 모델. `run.json`에 그대로 적는다.
 
     Returns:
         `<runs_root>/generate/<config 이름>/<실행 시각>/`.
@@ -95,6 +98,7 @@ def generate(
         "git_commit": commit,
         # 문서 수, 평가 파일 해시, 색인 이름은 이 검색 실행 폴더의 run.json에 있다.
         "contexts": str(contexts_dir),
+        "servers": servers,
         "elapsed_seconds": round(time.monotonic() - start, 1),
     }
     (run_dir / "run.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
@@ -118,6 +122,7 @@ def main(argv: list[str] | None = None) -> None:
     if config.generation is None:
         parser.error(f"{args.config}에 generation과 generate가 없다")
     g = config.generation
+    servers = {"gen": check_model("gen", g.base_url, g.model, g.revision)}
     run_dir = generate(
         args.config,
         config,
@@ -132,6 +137,7 @@ def main(argv: list[str] | None = None) -> None:
         contexts_dir=args.contexts,
         runs_root=Path("runs"),
         command=["python", "-m", "rag.generate", *argv],
+        servers=servers,
     )
     print(run_dir)
 
