@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from rag.metrics import question_scores, ranked_docs, summarize
+from rag.metrics import question_scores, ranked_docs, retrieval_hit, summarize
 
 
 def test_ranked_docs_keeps_first_occurrence_of_each_doc():
@@ -77,3 +77,17 @@ def test_summarize_averages_overall_and_by_type():
 def test_summarize_without_scored_questions():
     """모든 문항에 근거 문서가 없으면 평균은 비우고 뺀 문항 수만 적는다."""
     assert summarize([], skipped=3) == {"n_scored": 0, "n_skipped": 3, "mean": {}, "by_type": {}}
+
+
+@pytest.mark.parametrize(
+    "doc_ids, gold, expected",
+    [
+        (["a", "b", "x"], ["b", "a"], "all"),
+        (["a", "x"], ["a", "b"], "some"),
+        (["x"], ["a"], "none"),
+        (["x"], [], "no_gold"),
+    ],
+)
+def test_retrieval_hit_buckets(doc_ids, gold, expected):
+    """근거 문서를 전부·일부·못 가져왔는지, 근거 문서가 지정되지 않았는지로 나눈다."""
+    assert retrieval_hit(doc_ids, gold) == expected

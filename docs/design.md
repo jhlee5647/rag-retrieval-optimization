@@ -294,6 +294,9 @@ RAGAS의 세 지표를 쓴다. 채점 LLM은 `judge` 서버, 임베딩은 `embed
 
 채점 모델이 출력 형식을 못 맞추면 그 문항의 점수가 빈다. 빈 점수의 수를 지표마다 기록한다.
 
+- Factual Correctness는 F1 하나로 본다.
+- Response Relevancy는 "모른다" 같은 회피형 답에 0점을 준다. 그래서 unanswerable 유형의 낮은 점수는 올바르게 답을 거절한 결과로 읽는다.
+
 ### 집계
 
 전체 평균 하나로는 어디를 고칠지 알 수 없어서 나눠서도 평균을 낸다.
@@ -429,6 +432,7 @@ RAGAS_DO_NOT_TRACK=true
 - 서버는 한 번에 하나씩 띄운다. 동시에 띄우면 GPU 메모리 측정이 겹쳐 실패한다.
 - 기동 시간은 `embed` 약 2분 20초, `gen` 약 4분 40초다.
 - 문서 전체에 대한 정확 검색은 Qdrant 클라이언트의 기본 timeout 5초를 넘는다. 120초로 둔다.
+- RAGAS의 채점 모델 출력 한도는 4096토큰으로 둔다. 기본값 1024로는 긴 답의 주장 목록이 잘려 점수가 빈다.
 - `OpenAIEmbeddings`는 `check_embedding_ctx_length=False`로 만든다. 켜 두면 tiktoken으로 토큰화한 정수 배열을 보내 vLLM의 모델과 맞지 않는다.
 - `QdrantVectorStore`는 `validate_collection_config=False`로 만든다. 기본 검사는 임베딩 서버를 한 번 더 부른다.
 - 500문항에 검색 약 204초, 생성 약 908초가 걸린다.
@@ -452,7 +456,3 @@ RAGAS_DO_NOT_TRACK=true
 | 문서 51만 개의 파일 수를 세는 데 걸리는 시간 | retrieve 최소 실행 단위에서 장비에서 잰다 |
 | 서버의 모델 리비전을 확인하는 방법. API는 모델 이름만 알려 준다 | 서버 내려받기와 대조 단위 |
 | 프롬프트 문구 | generate 단위의 사전 리뷰 |
-| 채점 모델의 thinking 사용 여부, 채점 동시 처리 수, 빈 점수 비율 | score 단위에서 실제 서버로 확인한다 |
-| Response Relevancy가 "답할 수 없다"는 답을 0점 처리하는지, 그렇다면 unanswerable 유형을 어떻게 읽을지 | score 단위 |
-| RAGAS가 쓰는 tiktoken이 실행 중 외부에서 파일을 받으려 하는지 | score 단위. 외부 접속을 막은 상태에서 확인한다 |
-| Factual Correctness를 F1 하나로 볼지 정밀도와 재현율로 나눌지 | score 단위 |

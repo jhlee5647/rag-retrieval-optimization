@@ -35,11 +35,12 @@ def read_questions(eval_file: Path, fields: EvalFields) -> list[dict[str, Any]]:
 
     Returns:
         파일 순서대로 `{"id", "question", "doc_ids", "type"}`의 목록. 키는 이 도구가 쓰는 이름이다.
+        `fields.answer`를 적었으면 `"answer"`도 담는다.
 
     Raises:
         KeyError: 문항에 `fields`가 가리키는 필드가 없는 경우.
     """
     with eval_file.open(encoding="utf-8") as f:
         rows = [json.loads(line) for line in f if line.strip()]
-    names = fields.model_dump()
+    names = fields.model_dump(exclude_none=True)
     return [{ours: row[theirs] for ours, theirs in names.items()} for row in rows]

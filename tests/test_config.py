@@ -193,3 +193,15 @@ def test_rejects_non_local_generation_server(tmp_path):
     # Act / Assert
     with pytest.raises(ValidationError, match="127.0.0.1이나 localhost"):
         load_config(path)
+
+
+def test_rejects_generation_without_judge(tmp_path):
+    """generation과 generate만 적고 judge를 빼면 거부한다. 셋은 함께 적거나 함께 뺀다."""
+    # Arrange
+    path = write(
+        tmp_path, VALID + GENERATION + "generate:\n  - answer: {prompt: prompts/answer.txt}\n"
+    )
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match="judge"):
+        load_config(path)

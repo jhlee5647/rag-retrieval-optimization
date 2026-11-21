@@ -73,6 +73,8 @@ class EvalFields(Strict):
     question: str
     doc_ids: str
     type: str
+    # 정답. Factual Correctness를 채점할 때만 쓴다. 검색만 할 때는 적지 않아도 된다.
+    answer: str | None = None
 
 
 class Eval(Strict):
@@ -94,8 +96,16 @@ class Generation(Strict):
     temperature: float = Field(ge=0)
 
 
+class Judge(Strict):
+    """채점 서버와 모델."""
+
+    base_url: LocalUrl
+    model: str
+    revision: str
+
+
 class Config(Strict):
-    """config 전체. `generation`과 `generate`를 빼면 검색만 하는 config다."""
+    """config 전체. `generation`, `generate`, `judge`를 빼면 검색만 하는 config다."""
 
     index: Index
     chunking: Chunking
@@ -105,6 +115,7 @@ class Config(Strict):
     retrieve: list[dict[str, dict[str, Any]]] = Field(min_length=1)
     generation: Generation | None = None
     generate: list[dict[str, dict[str, Any]]] | None = Field(default=None, min_length=1)
+    judge: Judge | None = None
 
     @field_validator("retrieve", "generate")
     @classmethod
@@ -116,8 +127,9 @@ class Config(Strict):
 
     @model_validator(mode="after")
     def _generation_with_nodes(self):
-        if (self.generation is None) != (self.generate is None):
-            raise ValueError("generation과 generate는 함께 적거나 함께 뺀다")
+        present = [self.generation is not None, self.generate is not None, self.judge is not None]
+        if any(present) and not all(present):
+            raise ValueError("generation, generate, judge는 함께 적거나 함께 뺀다")
         return self
 
     @model_validator(mode="after")

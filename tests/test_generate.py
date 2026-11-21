@@ -25,6 +25,7 @@ generation:
   temperature: 0
 generate:
   - answer: {{prompt: {prompt}}}
+judge: {{base_url: "http://127.0.0.1:8002/v1", model: j, revision: r}}
 """
 
 
