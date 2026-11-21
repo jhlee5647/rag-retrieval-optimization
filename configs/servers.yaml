@@ -1,0 +1,44 @@
+# 서버 정의. python -m rag.serve start|stop <역할>이 이 정의대로 docker 컨테이너를 띄우고 내린다.
+# 모델 파일과 Qdrant 저장 폴더의 위치는 장비마다 달라 .env의 HF_HOME과 QDRANT_STORAGE에 둔다.
+# 이미지는 태그가 다른 이미지로 옮겨 붙을 수 있어 digest로 고정한다.
+
+qdrant:
+  image: qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2  # v1.20.0
+  port: 6333
+
+vllm:
+  image: vllm/vllm-openai@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34  # v0.32.0
+  # gpu_share는 GPU 전체 대비 고정 몫이다. 함께 띄우는 서버들의 합이 1을 넘으면 뒤의 서버가 기동하지 못한다.
+  # embed는 gen이나 judge 중 하나와 함께 뜬다. gen과 judge는 함께 뜨지 않는다.
+  servers:
+    embed:
+      model: Qwen/Qwen3-Embedding-4B
+      revision: 5cf2132abc99cad020ac570b19d031efec650f2b
+      port: 8003
+      # 0.20은 8192토큰 요청 하나에 드는 KV 캐시를 못 채워 기동에 실패한다 (장비에서 측정).
+      gpu_share: 0.22
+      args: [--runner, pooling, --max-model-len, "8192"]
+    gen:
+      model: Qwen/Qwen3.8-27B-FP8
+      revision: c3a462cc3d38cf351f3b26cbd763469eeb74ef81
+      port: 8001
+      gpu_share: 0.70
+      args:
+        - --max-model-len
+        - "32768"
+        - --language-model-only
+        - --max-num-seqs
+        - "32"
+        - --reasoning-parser
+        - qwen3
+        - --default-chat-template-kwargs
+        - '{"enable_thinking": false}'
+    judge:
+      model: RedHatAI/gemma-4-26B-A4B-it-NVFP4
+      revision: 5557756b8dce33ac72f2bd702b11729fdba3b839
+      port: 8002
+      # 이 장비에서 4B 임베딩(0.22)과 함께 기동이 확인된 몫이다.
+      gpu_share: 0.66
+      # 채점 입력은 문맥 몇 개와 답이라 32K면 충분하다. Gemma 4는 thinking이 기본으로 꺼져 있고,
+      # 파서는 비어 있는 생각 블록을 답에서 걷어낸다.
+      args: [--max-model-len, "32768", --language-model-only, --reasoning-parser, gemma4]

@@ -173,6 +173,8 @@ judge:
 |---|---|
 | `DOCS_DIR` | 문서 폴더. 바로 아래의 `*.txt`만 읽는다 |
 | `EVAL_FILE` | 평가 JSONL 파일 |
+| `HF_HOME` | 모델 파일 폴더. 모델 서버 컨테이너에 같은 경로로 붙인다 |
+| `QDRANT_STORAGE` | Qdrant 저장 폴더 |
 
 입력 형식은 "문서는 `.txt` 파일들, 평가는 JSONL"로 고정한다. 평가 파일의 필드 이름만 `eval.fields`로 맞춘다. 문서 ID 규칙을 바꾸는 설정은 두지 않는다.
 
@@ -347,36 +349,16 @@ runs/generate/<config 이름>/<실행 시각>/
 | `qdrant` | 없음 | 6333 | 없음 |
 | `embed` | `Qwen/Qwen3-Embedding-4B` | 8003 | 0.22 |
 | `gen` | `Qwen/Qwen3.8-27B-FP8` | 8001 | 0.70 |
-| `judge` | `RedHatAI/gemma-4-26B-A4B-it-NVFP4` | 8002 | 0.70 |
+| `judge` | `RedHatAI/gemma-4-26B-A4B-it-NVFP4` | 8002 | 0.66 |
 
 - `gen`과 `judge`는 함께 뜨지 않는다. `embed`는 둘 중 하나와 함께 뜬다.
-- `judge`의 포트와 GPU 몫은 가정이다. 서버 띄우기 단위에서 장비에서 확인한다.
 - 포트는 모두 `127.0.0.1`에만 연다.
 - 모델 파일은 `HF_HOME` 아래에 고정 리비전으로 있어야 한다. 실행 중에는 내려받지 않는다.
 - Qdrant 저장 폴더는 기존 색인이 들어 있는 폴더를 그대로 쓴다.
 
-장비에서 동작이 확인된 시작값은 다음과 같다. `judge`의 이미지와 인자는 개발자가 장비에서 띄울 때 쓴 값을 받는다.
+정의 전체는 `configs/servers.yaml`에 있다. `judge`는 이 장비에서 생성 서버로 띄워 채점에도 썼던 값에서 포트와 `--max-model-len`(65536 → 32768)만 바꿨다.
 
-```yaml
-qdrant:
-  image: qdrant/qdrant@sha256:9bfc89f9914fc14876a88c05270685921a55b8877b254a98bcc1cc2f0a424cd2  # v1.20.0
-vllm:
-  image: vllm/vllm-openai@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34  # v0.32.0
-  servers:
-    embed:
-      args: [--runner, pooling, --max-model-len, "8192"]
-    gen:
-      args:
-        - --max-model-len
-        - "32768"
-        - --language-model-only
-        - --max-num-seqs
-        - "32"
-        - --reasoning-parser
-        - qwen3
-        - --default-chat-template-kwargs
-        - '{"enable_thinking": false}'
-```
+`serve start <역할>`은 컨테이너 `rag-<역할>`을 띄우고 상태 확인 주소가 200을 줄 때까지 기다린다. 멈춘 컨테이너는 로그를 볼 수 있게 남겨 두고, 다시 띄울 때 지운다.
 
 ## 유출 방지
 
@@ -468,7 +450,6 @@ RAGAS_DO_NOT_TRACK=true
 |---|---|
 | 의존성 버전. RAGAS와 LangChain이 함께 설치되는지 | 스캐폴딩 단위. 안 되면 멈추고 묻는다 |
 | 문서 51만 개의 파일 수를 세는 데 걸리는 시간 | retrieve 최소 실행 단위에서 장비에서 잰다 |
-| `judge` 서버의 이미지, 인자, 포트, GPU 몫 | 서버 띄우기 단위 |
 | 서버의 모델 리비전을 확인하는 방법. API는 모델 이름만 알려 준다 | 서버 내려받기와 대조 단위 |
 | 프롬프트 문구 | generate 단위의 사전 리뷰 |
 | 채점 모델의 thinking 사용 여부, 채점 동시 처리 수, 빈 점수 비율 | score 단위에서 실제 서버로 확인한다 |
