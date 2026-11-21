@@ -7,13 +7,13 @@ from conftest import add_index
 
 from rag.config import load_config
 from rag.data import count_docs
-from rag.index import index_name
+from rag.index import has_index, index_name
 from rag.retrieve import main, retrieve
 
 CONFIG = """
 index: {url: http://127.0.0.1:6333, exact: true}
 chunking: {size: 512, overlap: 64}
-embedding: {base_url: http://127.0.0.1:8003/v1, model: m, revision: r}
+embedding: {base_url: http://127.0.0.1:8003/v1, model: m, revision: r, max_input_tokens: 8192}
 eval: {fields: {id: id, question: question, doc_ids: gold, type: type}, k: [1]}
 retrieve:
   - search: {mode: dense, top_k: 1}
@@ -50,6 +50,8 @@ def run(setup, qdrant, embeddings, tmp_path, limit=None):
         eval_file=eval_file,
         runs_root=tmp_path / "runs",
         command=["python", "-m", "rag.retrieve", str(config_path)],
+        # 문서가 짧아 글자 수로 세도 청크 하나씩이다
+        token_len=len,
         limit=limit,
     )
 
@@ -75,18 +77,21 @@ def test_writes_contexts_and_config_copy(setup, qdrant, embeddings, tmp_path):
     ]
 
 
-def test_stops_without_run_dir_when_index_missing(setup, qdrant, embeddings, tmp_path):
-    """색인 조건에 맞는 색인이 없으면 검색 전에 멈추고 실행 폴더를 남기지 않는다."""
+def test_builds_missing_index_then_searches(setup, qdrant, embeddings, tmp_path):
+    """색인 조건에 맞는 색인이 없으면 멈추지 않고 문서 폴더로 새로 만든 뒤 검색한다."""
     # Arrange: 문서 수가 다른 조건의 색인만 있다
     config_path, docs, _ = setup
     other = index_name(load_config(config_path), count_docs(docs) + 1)
     add_index(qdrant, other, [("doc-a", "alpha")])
 
-    # Act / Assert
-    with pytest.raises(LookupError):
-        run(setup, qdrant, embeddings, tmp_path)
-    assert embeddings.queries == []
-    assert not (tmp_path / "runs").exists()
+    # Act
+    run_dir = run(setup, qdrant, embeddings, tmp_path)
+
+    # Assert
+    name = index_name(load_config(config_path), count_docs(docs))
+    assert has_index(qdrant, name)
+    rows = [json.loads(line) for line in (run_dir / "contexts.jsonl").read_text().splitlines()]
+    assert [r["doc_ids"] for r in rows] == [["doc-b"], ["doc-a"]]
 
 
 def test_rejects_unregistered_node_before_index_check(setup, qdrant, embeddings, tmp_path):

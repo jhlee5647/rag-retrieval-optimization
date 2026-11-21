@@ -43,6 +43,7 @@ def make_config(**overrides) -> Config:
             "base_url": "http://127.0.0.1:8003/v1",
             "model": "test/model",
             "revision": "abc",
+            "max_input_tokens": 8192,
         },
         "eval": {
             "fields": {"id": "id", "question": "question", "doc_ids": "gold", "type": "type"},
@@ -54,12 +55,13 @@ def make_config(**overrides) -> Config:
     return Config.model_validate(raw)
 
 
-def add_index(client: QdrantClient, alias: str, chunks: list[tuple[str, str]]) -> None:
+def add_index(
+    client: QdrantClient, alias: str, chunks: list[tuple[str, str]], collection: str = "data-test"
+) -> None:
     """청크 `(문서 ID, 내용)`들을 담은 컬렉션을 만들고 `alias` 별칭을 붙인다.
 
     점 ID와 payload 형태는 실제 색인 형식(docs/design.md의 "색인 형식")을 따른다.
     """
-    collection = "data-test"
     client.create_collection(
         collection,
         vectors_config=models.VectorParams(size=len(KEYWORDS), distance=models.Distance.COSINE),

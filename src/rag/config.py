@@ -5,7 +5,15 @@ from typing import Annotated, Any
 from urllib.parse import urlsplit
 
 import yaml
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, PositiveInt, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveInt,
+    field_validator,
+    model_validator,
+)
 
 LOCAL_HOSTS = ("127.0.0.1", "localhost")
 
@@ -50,6 +58,8 @@ class Embedding(Strict):
     base_url: LocalUrl
     model: str
     revision: str
+    # 청크 크기의 상한. 이보다 긴 입력은 임베딩 서버가 받지 않는다.
+    max_input_tokens: PositiveInt
     # 질문에만 붙인다. 기본값은 Qwen3-Embedding 모델 카드의 예시 문장이다.
     query_instruction: str = (
         "Given a web search query, retrieve relevant passages that answer the query"
@@ -89,6 +99,19 @@ class Config(Strict):
             if len(step) != 1:
                 raise ValueError(f"retrieve의 항목 하나에는 노드 하나만 적는다: {step}")
         return steps
+
+    @model_validator(mode="after")
+    def _chunks_fit(self):
+        # 색인을 만드는 데 몇 시간이 걸리므로, 만들 수 없는 청크 설정은 시작 전에 거부한다.
+        size, overlap = self.chunking.size, self.chunking.overlap
+        if overlap >= size:
+            raise ValueError(f"chunking.overlap({overlap})은 chunking.size({size})보다 작아야 한다")
+        if size > self.embedding.max_input_tokens:
+            raise ValueError(
+                f"chunking.size({size})가 embedding.max_input_tokens"
+                f"({self.embedding.max_input_tokens})를 넘는다"
+            )
+        return self
 
 
 def load_config(path: Path) -> Config:

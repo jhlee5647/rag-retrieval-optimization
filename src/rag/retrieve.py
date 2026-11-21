@@ -10,6 +10,7 @@ import json
 import os
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from langchain_core.embeddings import Embeddings
@@ -19,7 +20,7 @@ from qdrant_client import QdrantClient
 
 from rag.config import Config, load_config
 from rag.data import count_docs, read_questions
-from rag.index import index_name, require_index
+from rag.index import build_index, has_index, index_name, token_counter
 from rag.metrics import question_scores, summarize
 from rag.pipeline import Resources, build_graph
 from rag.runs import create_run_dir, file_sha256, git_commit
@@ -40,6 +41,7 @@ def retrieve(
     eval_file: Path,
     runs_root: Path,
     command: list[str],
+    token_len: Callable[[str], int],
     limit: int | None = None,
 ) -> Path:
     """평가 문항마다 검색 그래프를 돌려 `contexts.jsonl`, 검색 지표, config 사본을 쓴다.
@@ -48,25 +50,26 @@ def retrieve(
     `metrics.json`이다. 근거 문서가 지정되지 않은 문항은 대조할 정답이 없어 지표에서 빼지만, 생성
     단계가 그 문맥도 쓰므로 검색은 한다.
 
-    검색을 시작하기 전에 노드 목록과 색인을 모두 확인한다. 실행 폴더는 검색이 끝난 뒤에 만들어,
-    실패한 실행이 빈 폴더를 남기지 않게 한다.
+    검색을 시작하기 전에 노드 목록을 확인하고, 색인 조건에 맞는 색인이 없으면 새로 만든다. 실행 폴더는
+    검색이 끝난 뒤에 만들어, 실패한 실행이 빈 폴더를 남기지 않게 한다.
 
     Args:
         config_path: config 파일. 사본과 실행 폴더 이름에 쓴다.
         config: `config_path`를 읽어 검사한 config.
         client: Qdrant 클라이언트.
         embeddings: 질문을 임베딩할 모델.
-        docs_dir: 문서 폴더. 색인 이름을 계산하는 데 파일 수만 쓴다.
+        docs_dir: 문서 폴더. 색인 이름은 파일 수로 계산하고, 색인이 없을 때만 문서를 읽는다.
         eval_file: 평가 JSONL 파일.
         runs_root: 실행 폴더들의 최상위 폴더. 보통 `runs`.
         command: 실행한 명령줄. `run.json`에 그대로 적는다.
+        token_len: 색인을 만들 때 청크 길이를 세는 함수.
         limit: 평가 파일의 앞 몇 문항만 돌릴지. None이면 전부 돌린다.
 
     Returns:
         `<runs_root>/retrieve/<config 이름>/<실행 시각>/`.
 
     Raises:
-        LookupError: 색인 조건에 맞는 색인이 Qdrant에 없는 경우.
+        RuntimeError: 색인을 만들다 점 수가 맞지 않은 경우 (`build_index`).
         ValueError: 등록되지 않은 노드 이름이 있는 경우.
     """
     start = time.monotonic()
@@ -74,7 +77,7 @@ def retrieve(
     doc_count = count_docs(docs_dir)
     name = index_name(config, doc_count)
     print(f"문서 {doc_count}개, 색인 {name}")
-    # 색인 검사를 맡긴 require_index와 겹치므로, 저장소를 만들 때 컬렉션을 검사하지 않는다.
+    # 색인 확인과 만들기를 따로 하므로, 저장소를 만들 때 컬렉션을 검사하지 않는다.
     # 켜 두면 임베딩 서버도 한 번 더 부른다.
     store = QdrantVectorStore(
         client=client,
@@ -83,7 +86,11 @@ def retrieve(
         validate_collection_config=False,
     )
     graph = build_graph(config.retrieve, Resources(config=config, vectorstore=store))
-    require_index(client, name)
+    if not has_index(client, name):
+        print(
+            f"색인 {name}이 없어 문서 {doc_count}개로 새로 만든다. 문서 전체는 6.5시간 이상 걸린다"
+        )
+        build_index(client, name, config, docs_dir, embeddings, token_len)
 
     questions = read_questions(eval_file, config.eval.fields)[:limit]
     states = graph.batch(
@@ -166,6 +173,7 @@ def main(argv: list[str] | None = None) -> None:
         eval_file=Path(os.environ["EVAL_FILE"]),
         runs_root=Path("runs"),
         command=["python", "-m", "rag.retrieve", *argv],
+        token_len=token_counter(config.embedding.model, config.embedding.revision),
         limit=args.limit,
     )
     print(run_dir)
