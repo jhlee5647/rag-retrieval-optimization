@@ -110,6 +110,8 @@ uv run --env-file .env python -m rag.compare
 
 `compare`는 `runs/` 아래의 실행을 검색 실행끼리, 생성 실행끼리 표로 보여 준다.
 
+`pair`(`python -m rag.pair <기준 실행 폴더> <후보 실행 폴더>`)는 두 실행을 같은 문항끼리 짝지어, 지표마다 평균 차이와 그 부트스트랩 95% 구간, 점수가 오른·내린 문항 수를 표로 낸다. 구간이 0을 포함하면 그 차이는 우연일 수 있다. `all_gold@k`는 근거 문서를 전부 가져온 문항의 비율, `refusal`은 거절한 답의 비율이다. `--metric A=B`로 이름이 다른 지표를 짝짓고, `--exclude-type`으로 유형을 빼고, `--answered`로 두 실행이 모두 답한 문항만 본다.
+
 ## config
 
 [configs/naive.yaml](configs/naive.yaml)이 예시다. 정의되지 않은 항목(오타 포함)이나, 만들 수 없는 조건(겹침 ≥ 청크 크기, 문맥이 생성 모델 한도를 넘음 등), 로컬이 아닌 서버 주소는 실행 전에 거부한다. `generation`, `generate`, `judge`는 함께 적거나 함께 뺀다. 빼면 검색만 하는 config다.
