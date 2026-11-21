@@ -1,10 +1,10 @@
-# rag
+# config 기반 RAG 검색·생성·채점 실행 환경
 
 config 파일 하나에 RAG 파이프라인을 적고, 그대로 검색·생성·채점을 돌려 결과를 실행마다 폴더에 남기는 실행 환경이다. 데이터를 장비 밖으로 보내지 않도록 모델을 모두 로컬 서버로 띄우고, 외부 접속을 코드에서 막는다.
 
 지금 들어 있는 구성은 naive RAG(임베딩 검색 → 답 생성) 하나다. 설계는 [docs/design.md](docs/design.md)에 있다.
 
-## 준비물
+## 환경 준비
 
 - Ubuntu, GPU 48GB 한 장(RTX A6000에서 확인), docker와 nvidia-container-toolkit
 - docker 권한. 실행 명령도 서버의 모델을 확인하려고 docker를 부른다: `sudo usermod -aG docker $USER` 뒤 다시 로그인
@@ -48,13 +48,28 @@ GPU 한 장에 `gen`과 `judge`는 함께 뜨지 않는다. `qdrant`와 `embed`�
 
 ## 실행 순서
 
+시간은 평가 문항 500개 기준이다.
+
 ```
+# 1. 벡터 DB와 임베딩 서버를 띄운다 (약 3분 30초)
 uv run --env-file .env python -m rag.serve start qdrant && uv run --env-file .env python -m rag.serve start embed
-uv run --env-file .env python -m rag.retrieve configs/naive.yaml  # 약 2분 (500문항)
+
+# 2. 평가 문항마다 검색하고 검색 지표를 낸다. 결과는 runs/retrieve/naive/<시각>/ (약 2분)
+uv run --env-file .env python -m rag.retrieve configs/naive.yaml
+
+# 3. 생성 모델 서버를 띄운다 (약 5분)
 uv run --env-file .env python -m rag.serve start gen
-uv run --env-file .env python -m rag.generate configs/naive.yaml --contexts runs/retrieve/naive/<시각>  # 약 15분
+
+# 4. 2의 검색 결과로 문항마다 답을 만든다. 결과는 runs/generate/naive/<시각>/ (약 15분)
+uv run --env-file .env python -m rag.generate configs/naive.yaml --contexts runs/retrieve/naive/<시각>
+
+# 5. 생성 모델 서버를 내리고 채점 모델 서버를 띄운다. 둘은 GPU에 함께 올라가지 않는다 (약 4분)
 uv run --env-file .env python -m rag.serve stop gen && uv run --env-file .env python -m rag.serve start judge
-uv run --env-file .env python -m rag.score runs/generate/naive/<시각>  # 약 26분
+
+# 6. 4의 답을 채점해 그 생성 실행 폴더에 점수를 쓴다 (약 26분)
+uv run --env-file .env python -m rag.score runs/generate/naive/<시각>
+
+# 7. 지금까지의 실행들을 검색끼리, 생성끼리 표로 비교한다
 uv run --env-file .env python -m rag.compare
 ```
 
