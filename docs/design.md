@@ -389,16 +389,21 @@ vllm:
 
 2번은 목록에 적은 스위치만 막는다. 의존성이 많아 목록에 없는 전송이 있을 수 있고, 4번이 그것을 막는다. 테스트도 같은 차단이 걸린 채로 돈다.
 
-환경변수의 시작 목록은 다음과 같다. 최종 목록은 유출 방지 단위에서 설치된 의존성을 보고 정한다.
+환경변수 목록은 다음과 같다. 설치된 의존성이 실제로 읽는 것만 적었다.
 
 ```
 DO_NOT_TRACK=1
 HF_HUB_DISABLE_TELEMETRY=1
-LANGSMITH_TRACING=false
+LANGSMITH_TRACING_V2=false
 LANGCHAIN_TRACING_V2=false
-LANGGRAPH_CLI_NO_ANALYTICS=1
+LANGSMITH_TRACING=false
+LANGCHAIN_TRACING=false
 RAGAS_DO_NOT_TRACK=true
 ```
+
+- langsmith는 추적 여부를 `LANGSMITH_TRACING_V2`, `LANGCHAIN_TRACING_V2`, `LANGSMITH_TRACING`, `LANGCHAIN_TRACING` 순서로 보고, 처음 값이 있는 것을 따른다. 그래서 넷 다 끈다.
+- `LANGGRAPH_CLI_NO_ANALYTICS`는 langgraph-cli가 읽는데, langgraph-cli는 설치돼 있지 않아 뺐다.
+- 4번(외부 접속 차단)은 감사 훅으로 `socket.connect`, `socket.sendto`, `socket.sendmsg`를 검사한다. 루프백 주소(`127.0.0.0/8`, `::1`)와 `localhost`만 통과시킨다. Python 소켓을 거치지 않는 C·Rust 확장의 접속(grpcio, hf-xet)은 막지 못한다.
 
 컨테이너는 이 프로세스 밖이라 4번이 닿지 않는다. 컨테이너는 포트를 `127.0.0.1`에만 열고, 통계 전송을 끄고(`VLLM_NO_USAGE_STATS=1`, `QDRANT__TELEMETRY_DISABLED=true`), 오프라인(`HF_HUB_OFFLINE=1`)으로 띄운다. 컨테이너의 외부 송신까지 확실히 막으려면 장비 방화벽에서 차단해야 한다.
 
@@ -409,7 +414,7 @@ RAGAS_DO_NOT_TRACK=true
 - RAGAS는 입력을 맞추고 점수를 집계하는 부분만 자동으로 테스트한다. 실제 채점 모델과의 동작은 장비에서 직접 확인한다.
 - 개발을 실행 장비에서 하므로, 단위마다 사전 리뷰의 "직접 확인하기"에 실제 서버로 돌리는 명령을 넣는다.
 - 린터와 포매터는 ruff다. 규칙은 ruff 기본값에 import 정렬을 더하고, 줄 길이는 100이다.
-- 매 단위의 검증에서 `uv run pytest`, `uv run ruff check`, `uv run ruff format --check`를 실행한다.
+- 매 단위의 검증에서 `uv run --env-file .env.example pytest`, `uv run ruff check`, `uv run ruff format --check`를 실행한다.
 - CI와 커밋 전 훅은 두지 않는다. 단위마다 사전 리뷰에서 위 명령의 출력을 확인한다.
 
 ## 주요 기술 선택
@@ -463,7 +468,6 @@ RAGAS_DO_NOT_TRACK=true
 |---|---|
 | 의존성 버전. RAGAS와 LangChain이 함께 설치되는지 | 스캐폴딩 단위. 안 되면 멈추고 묻는다 |
 | 문서 51만 개의 파일 수를 세는 데 걸리는 시간 | retrieve 최소 실행 단위에서 장비에서 잰다 |
-| 유출 방지 환경변수의 최종 목록, 외부 접속 차단의 구현 방법 | 유출 방지 단위 |
 | `judge` 서버의 이미지, 인자, 포트, GPU 몫 | 서버 띄우기 단위 |
 | 서버의 모델 리비전을 확인하는 방법. API는 모델 이름만 알려 준다 | 서버 내려받기와 대조 단위 |
 | 프롬프트 문구 | generate 단위의 사전 리뷰 |
