@@ -91,3 +91,33 @@ def test_rejects_empty_node_list(tmp_path):
     # Act / Assert
     with pytest.raises(ValidationError, match="retrieve"):
         load_config(path)
+
+
+@pytest.mark.parametrize(
+    "local, remote",
+    [
+        ("http://127.0.0.1:6333", "http://10.0.0.5:6333"),
+        ("http://127.0.0.1:8003/v1", "http://api.example.com/v1"),
+        # 앞부분만 보고 판단하면 통과하는 주소
+        ("http://127.0.0.1:8003/v1", "http://127.0.0.1.example.com/v1"),
+        ("http://127.0.0.1:6333", "http://127.0.0.1@example.com:6333"),
+    ],
+)
+def test_rejects_non_local_server_url(tmp_path, local, remote):
+    """index.url과 embedding.base_url은 127.0.0.1이나 localhost가 아니면 거부한다."""
+    # Arrange
+    path = write(tmp_path, VALID.replace(local, remote))
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match="127.0.0.1이나 localhost"):
+        load_config(path)
+
+
+def test_accepts_localhost_server_url(tmp_path):
+    """localhost로 적은 서버 주소는 받는다."""
+    # Act
+    config = load_config(write(tmp_path, VALID.replace("127.0.0.1", "localhost")))
+
+    # Assert
+    assert config.index.url == "http://localhost:6333"
+    assert config.embedding.base_url == "http://localhost:8003/v1"

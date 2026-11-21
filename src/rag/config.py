@@ -1,10 +1,23 @@
 """config 파일의 스키마와 읽기."""
 
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
+from urllib.parse import urlsplit
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+
+LOCAL_HOSTS = ("127.0.0.1", "localhost")
+
+
+def _require_local(url: str) -> str:
+    # 데이터를 장비 밖으로 보내지 않도록 이 장비의 서버만 받는다.
+    if urlsplit(url).hostname not in LOCAL_HOSTS:
+        raise ValueError(f"서버 주소는 127.0.0.1이나 localhost만 받는다: {url}")
+    return url
+
+
+LocalUrl = Annotated[str, AfterValidator(_require_local)]
 
 
 class Strict(BaseModel):
@@ -19,7 +32,7 @@ class Strict(BaseModel):
 class Index(Strict):
     """Qdrant 주소와 검색 방식."""
 
-    url: str
+    url: LocalUrl
     # true면 근사(HNSW)가 아닌 정확 검색을 한다. Qdrant의 기본값을 따라 기본은 근사 검색이다.
     exact: bool = False
 
@@ -34,7 +47,7 @@ class Chunking(Strict):
 class Embedding(Strict):
     """임베딩 서버와 모델."""
 
-    base_url: str
+    base_url: LocalUrl
     model: str
     revision: str
     # 질문에만 붙인다. 기본값은 Qwen3-Embedding 모델 카드의 예시 문장이다.

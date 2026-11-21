@@ -141,7 +141,7 @@ config 파일 하나로 naive RAG의 검색·생성·채점이 끝까지 돌고 
 
 - 2번부터는 실행 장비에서 개발한다.
 - 3번부터는 사전 리뷰의 "직접 확인하기"에 실제 서버로 돌리는 명령을 넣는다.
-- 매 단위의 검증에서 `uv run pytest`, `uv run ruff check`, `uv run ruff format --check`를 실행한다.
+- 매 단위의 검증에서 `uv run --env-file .env.example pytest`, `uv run ruff check`, `uv run ruff format --check`를 실행한다.
 
 ## 개발자 준비 항목
 
