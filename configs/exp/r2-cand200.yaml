@@ -1,0 +1,34 @@
+# 라운드 2의 후보. r1-hybrid-rerank에서 검색마다 가져오는 후보 수만 50에서 200으로 늘렸다.
+# 임베딩 검색 200개와 BM25 검색 200개를 모두 리랭커에 넘기고, 리랭커 점수가 높은 5개를 넘긴다.
+index: {url: http://127.0.0.1:6333, exact: true}
+chunking: {size: 512, overlap: 64}
+embedding:
+  base_url: http://127.0.0.1:8003/v1
+  model: Qwen/Qwen3-Embedding-4B
+  revision: 5cf2132abc99cad020ac570b19d031efec650f2b
+  max_input_tokens: 8192
+  query_instruction: Given a web search query, retrieve relevant passages that answer the query
+eval:
+  fields: {id: id, question: question, answer: reference, doc_ids: expected_doc_ids, type: type}
+  k: [1, 5]
+retrieve:
+  # top_k를 두 검색의 후보 수의 합으로 두어, 후보를 자르지 않고 리랭커에 넘긴다.
+  - search: {mode: hybrid, top_k: 400, candidates: 200}
+  - rerank: {top_k: 5}
+rerank:
+  base_url: http://127.0.0.1:8004/v1
+  model: BAAI/bge-reranker-v2-m3
+  revision: 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+generation:
+  base_url: http://127.0.0.1:8001/v1
+  model: Qwen/Qwen3.8-27B-FP8
+  revision: c3a462cc3d38cf351f3b26cbd763469eeb74ef81
+  max_model_len: 32768
+  max_tokens: 512
+  temperature: 0
+generate:
+  - answer: {prompt: prompts/answer.txt}
+judge:
+  base_url: http://127.0.0.1:8002/v1
+  model: RedHatAI/gemma-4-26B-A4B-it-NVFP4
+  revision: 5557756b8dce33ac72f2bd702b11729fdba3b839
