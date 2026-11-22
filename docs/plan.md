@@ -181,7 +181,7 @@ EnterpriseRAG-Bench에서 최적에 가까운 파이프라인을 찾는다. 리�
 | 19 | 라운드 0 config | 평가 파일을 dev와 test로 나누고, 라운드 0의 config를 둔다 | 16 | 머지 |
 | 21 | 라운드 0 보고 | dev 기준선, 병목 분석, 라운드 1 후보안을 보고한다 | 18, 19 | 승인 |
 | 22 | BM25·혼합 검색 | `search` 노드에 BM25 검색과 혼합 검색을 더하고, 라운드 1의 config 둘을 둔다 | 21 | 대기 |
-| 23 | 리랭킹 | `rerank` 노드와 리랭커 서버를 더하고, 라운드 1의 config 둘을 둔다 | 22 | 대기 |
+| 23 | 리랭킹 | `rerank` 노드와 리랭커 서버를 더하고, 라운드 1의 config 하나를 둔다 | 22 | 대기 |
 | 24 | 라운드 1 보고 | 라운드 1 후보의 결과와 분석, 다음 후보안을 보고한다 | 22, 23 | 대기 |
 
 20번(노드 준비)은 뺐다. 실험을 여러 장비에 나눠 돌리는 일은 개발자가 맡는다.
@@ -228,9 +228,9 @@ EnterpriseRAG-Bench에서 최적에 가까운 파이프라인을 찾는다. 리�
 #### 23. 리랭킹
 
 - 검색 결과를 리랭커 모델로 다시 매겨 상위 몇 개만 남기는 `rerank` 노드를 만든다.
-- `configs/servers.yaml`에 리랭커 서버를 더한다. 모델은 장비에 있는 `BAAI/bge-reranker-v2-m3`와 `Qwen/Qwen3-Reranker-4B`다.
-- `configs/exp/`에 `r1-hybrid-rerank-bge`와 `r1-hybrid-rerank-qwen`을 둔다.
+- `configs/servers.yaml`에 리랭커 서버를 더한다. 모델은 장비에 있는 `BAAI/bge-reranker-v2-m3`다.
+- `configs/exp/`에 `r1-hybrid-rerank`를 둔다.
 
 #### 24. 라운드 1 보고
 
-- `docs/experiments/round-1.md`에 네 후보의 결과와 분석, 다음 후보안을 적는다.
+- `docs/experiments/round-1.md`에 세 후보의 결과와 분석, 다음 후보안을 적는다.
