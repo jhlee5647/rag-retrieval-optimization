@@ -68,7 +68,7 @@ rag/
 ├─ .env.example          데이터 경로, 유출 방지 환경변수
 ├─ configs/
 │  ├─ naive.yaml         파이프라인 명세
-│  └─ servers.yaml       서버 정의: qdrant, embed, gen, judge
+│  └─ servers.yaml       서버 정의: qdrant, embed, gen, judge, rerank
 ├─ prompts/answer.txt    답 생성 프롬프트 틀
 ├─ docs/design.md, docs/plan.md
 ├─ src/rag/
@@ -143,6 +143,7 @@ judge:
 | `eval.fields` | 왼쪽은 이 도구가 쓰는 이름, 오른쪽은 평가 파일의 필드 이름이다 |
 | `eval.k` | 검색 지표를 잴 순위 목록 |
 | `retrieve` | 검색 단계의 노드 목록. 항목마다 `{노드 이름: 인자}` 하나다 |
+| `rerank` | 리랭커 서버, 모델, 고정 리비전. `retrieve`에 `rerank` 노드를 넣을 때만 적는다 |
 | `generation` | 생성 서버, 모델, 고정 리비전, 토큰 한도, 온도 |
 | `generate` | 생성 단계의 노드 목록 |
 | `judge` | 채점 서버, 모델, 고정 리비전 |
@@ -253,16 +254,18 @@ naive RAG는 BM25 벡터를 쓰지 않는다. 그래도 새 색인에 넣는 이
 - State는 노드들이 차례로 읽고 쓰는 공용 데이터다. 기본 필드는 `question`, `contexts`, `doc_ids`, `answer`다. LangGraph는 State에 없는 필드를 오류 없이 버리므로, 노드가 새 필드를 쓰려면 `pipeline.py`의 State에 먼저 더한다.
 - 그래프 안의 노드 이름에는 순번을 붙인다(`0-search`). LangGraph가 State 필드와 같은 노드 이름을 거부하고, 같은 노드를 두 번 넣을 수도 있어야 해서다.
 
-지금 만드는 노드는 둘이다.
+지금 만드는 노드는 셋이다.
 
 | 노드 | 인자 | 하는 일 |
 |---|---|---|
 | `search` | `mode`(`dense`, `bm25`, `hybrid`), `top_k`, `candidates`(`hybrid`에서만) | 질문으로 청크를 찾아 `contexts`와 `doc_ids`를 채운다 |
+| `rerank` | `top_k` | 앞 노드가 가져온 청크를 리랭커 점수가 높은 순으로 `top_k`개만 남긴다 |
 | `answer` | `prompt`(틀 파일 경로) | 틀의 `{context}`와 `{question}`을 채워 생성 모델을 부르고 `answer`를 채운다 |
 
 - `dense`는 질문을 임베딩해 가까운 청크를 찾는다. 질문은 `Instruct: <query_instruction>\nQuery:<질문>` 형식으로 임베딩한다. 문서 청크는 지시문 없이 임베딩돼 있다.
 - `bm25`는 색인의 BM25 벡터로 질문의 단어가 든 청크를 찾는다. 임베딩 모델을 부르지 않는다.
 - `hybrid`는 두 검색이 각각 `candidates`개를 가져오고, 두 순위를 RRF로 합쳐 `top_k`개를 고른다. 한 검색에서 n위인 청크가 `1 / (60 + n - 1)`점을 받는다.
+- `rerank`는 질문과 청크 한 쌍마다 리랭커 서버의 `/v1/rerank`에서 관련도 점수를 받는다. 순서는 이 점수만으로 정하고, 검색에서의 순위는 점수가 같을 때만 따른다.
 - 문맥은 `\n\n---\n\n`으로 이어 붙인다.
 - 프롬프트는 영어로 쓰고, 문맥에만 근거해 답하고 문맥에 답이 없으면 없다고 말하게 한다.
 - 문항은 동시에 8개씩 처리한다. 설정으로 두지 않는다.
@@ -357,8 +360,9 @@ runs/generate/<config 이름>/<실행 시각>/
 | `embed` | `Qwen/Qwen3-Embedding-4B` | 8003 | 0.22 |
 | `gen` | `Qwen/Qwen3.8-27B-FP8` | 8001 | 0.70 |
 | `judge` | `RedHatAI/gemma-4-26B-A4B-it-NVFP4` | 8002 | 0.66 |
+| `rerank` | `BAAI/bge-reranker-v2-m3` | 8004 | 0.07 |
 
-- `gen`과 `judge`는 함께 뜨지 않는다. `embed`는 둘 중 하나와 함께 뜬다.
+- `gen`과 `judge`는 함께 뜨지 않는다. `embed`는 둘 중 하나와 함께 뜬다. `rerank`는 `rerank` 노드가 있는 config로 검색할 때 `embed`와 함께 띄운다.
 - 포트는 모두 `127.0.0.1`에만 연다.
 - 모델 파일은 `HF_HOME` 아래에 고정 리비전으로 있어야 한다. 실행 중에는 내려받지 않는다.
 - Qdrant 저장 폴더는 기존 색인이 들어 있는 폴더를 그대로 쓴다.

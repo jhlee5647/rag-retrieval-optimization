@@ -20,7 +20,7 @@ from rag.runs import create_run_dir, git_commit
 from rag.serve import check_model
 
 # 검색 실행에 쓰인 config와 같아야 하는 항목. 다르면 생성 실행의 config 사본이 실제 검색 조건과 어긋난다.
-RETRIEVAL_PARTS = ("index", "chunking", "embedding", "eval", "retrieve")
+RETRIEVAL_PARTS = ("index", "chunking", "embedding", "eval", "retrieve", "rerank")
 # 문맥 말고 프롬프트에 들어가는 것(틀, 질문, 채팅 템플릿)의 여유분. 청크 크기를 임베딩 토크나이저로 잰 데서
 # 오는 차이도 여기에 포함한다 (docs/design.md의 "실행 전 검사").
 PROMPT_MARGIN_TOKENS = 1024

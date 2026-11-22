@@ -205,3 +205,38 @@ def test_rejects_generation_without_judge(tmp_path):
     # Act / Assert
     with pytest.raises(ValidationError, match="judge"):
         load_config(path)
+
+
+RERANK = "rerank: {base_url: http://127.0.0.1:8004/v1, model: m, revision: r}\n"
+RERANK_NODE = "  - rerank: {top_k: 5}\n"
+
+
+def test_accepts_rerank_section_with_rerank_node(tmp_path):
+    """retrieve에 rerank 노드를 넣고 rerank 절을 함께 적은 config를 받는다."""
+    # Act
+    config = load_config(write(tmp_path, VALID + RERANK_NODE + RERANK))
+
+    # Assert
+    assert config.rerank.model == "m"
+    assert config.retrieve[1] == {"rerank": {"top_k": 5}}
+
+
+@pytest.mark.parametrize("extra", [RERANK, RERANK_NODE], ids=["section-only", "node-only"])
+def test_rejects_rerank_section_without_node_and_node_without_section(tmp_path, extra):
+    """rerank 절과 rerank 노드는 함께 적거나 함께 뺀다. 하나만 적으면 거부한다."""
+    # Arrange
+    path = write(tmp_path, VALID + extra)
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match="rerank 절과"):
+        load_config(path)
+
+
+def test_rejects_non_local_rerank_server(tmp_path):
+    """리랭커 서버 주소도 127.0.0.1이나 localhost가 아니면 거부한다."""
+    # Arrange
+    path = write(tmp_path, VALID + RERANK_NODE + RERANK.replace("127.0.0.1", "10.0.0.5"))
+
+    # Act / Assert
+    with pytest.raises(ValidationError, match="127.0.0.1이나 localhost"):
+        load_config(path)
