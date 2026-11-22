@@ -1,11 +1,15 @@
+import dataclasses
 import json
 
 import httpx
 import pytest
 from conftest import make_config
+from langchain_qdrant import QdrantVectorStore
 from pydantic import ValidationError
+from qdrant_client import models
 
 from rag.config import Rerank
+from rag.index import point_id
 from rag.nodes.rerank import make_reranker, rerank
 from rag.pipeline import Resources
 
@@ -86,6 +90,57 @@ def test_rejects_invalid_params_before_running(params, expected):
     # Assert
     assert [(e["type"], e["loc"]) for e in exc.value.errors()] == [expected]
     assert calls == []
+
+
+def test_dedup_keeps_only_best_chunk_of_each_document():
+    """dedup을 켜면 한 문서에서 점수가 가장 높은 청크만 남기고, 빈 자리는 다음 문서의 청크로 채운다."""
+    # Arrange: 점수 1위와 2위가 같은 문서의 청크다
+    state = {**STATE, "doc_ids": ["doc-a", "doc-a", "doc-b"]}
+    run = rerank({"top_k": 2, "dedup": True}, resources_scoring([0.9, 0.8, 0.5]))
+
+    # Act
+    result = run(state)
+
+    # Assert
+    assert result == {"contexts": ["first", "third"], "doc_ids": ["doc-a", "doc-b"]}
+
+
+def test_title_adds_document_first_line_to_reranker_input_only(qdrant, embeddings):
+    """title을 켜면 리랭커에는 문서의 첫 줄을 붙인 청크를 넘기고, 돌려주는 청크는 원래 글 그대로다."""
+    # Arrange: 한 문서의 첫 청크와 둘째 청크. 첫 청크만 제목 줄로 시작한다
+    head, tail = "Quarterly Plan\nalpha goals", "beta budget details"
+    qdrant.create_collection(
+        "data-test", vectors_config=models.VectorParams(size=1, distance=models.Distance.COSINE)
+    )
+    qdrant.upsert(
+        "data-test",
+        points=[
+            models.PointStruct(
+                id=point_id("doc-a", chunk),
+                vector=[1.0],
+                payload={"page_content": text, "metadata": {"doc_id": "doc-a", "chunk": chunk}},
+            )
+            for chunk, text in enumerate([head, tail])
+        ],
+    )
+    store = QdrantVectorStore(
+        client=qdrant,
+        collection_name="data-test",
+        embedding=embeddings,
+        validate_collection_config=False,
+    )
+    calls = []
+    resources = dataclasses.replace(resources_scoring([0.1, 0.9], calls), vectorstore=store)
+    run = rerank({"top_k": 2, "title": True}, resources)
+
+    # Act
+    result = run(
+        {"question": "which one?", "contexts": [head, tail], "doc_ids": ["doc-a", "doc-a"]}
+    )
+
+    # Assert: 첫 청크는 이미 제목 줄로 시작하므로 그대로 넘긴다
+    assert calls == [("which one?", [head, "Quarterly Plan\n\nbeta budget details"])]
+    assert result == {"contexts": [tail, head], "doc_ids": ["doc-a", "doc-a"]}
 
 
 SECTION = Rerank(base_url="http://127.0.0.1:8004/v1", model="test/reranker", revision="abc")

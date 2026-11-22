@@ -95,6 +95,14 @@ def token_counter(model: str, revision: str) -> Callable[[str], int]:
     return lambda text: len(tokenizer.encode(text, add_special_tokens=False).ids)
 
 
+def point_id(doc_id: str, chunk: int) -> str:
+    """청크의 점 ID. 문서 ID와 청크 번호만으로 정해져, 검색 없이 특정 청크를 바로 가져올 수 있다.
+
+    이 계산이 바뀌면 이미 만든 색인에서 청크를 찾지 못한다.
+    """
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_id}:{chunk}"))
+
+
 def bm25_vector(text: str) -> models.SparseVector:
     """청크의 BM25 희소 벡터. 단어의 CRC32가 색인 번호, `f·(k1+1)/(f+k1)`이 가중치다.
 
@@ -161,7 +169,7 @@ def build_index(
         for path in batch:
             for i, text in enumerate(splitter.split_text(path.read_text(encoding="utf-8"))):
                 texts.append(text)
-                ids.append(str(uuid.uuid5(uuid.NAMESPACE_URL, f"{path.stem}:{i}")))
+                ids.append(point_id(path.stem, i))
                 # langchain-qdrant가 검색 결과를 Document로 되돌릴 때 읽는 칸 이름이다.
                 payloads.append(
                     {"page_content": text, "metadata": {"doc_id": path.stem, "chunk": i}}
