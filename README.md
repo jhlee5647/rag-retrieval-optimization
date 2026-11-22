@@ -37,6 +37,7 @@ cp .env.example .env
 | `embed` | 임베딩 모델 | 8003 | 약 2분 |
 | `gen` | 생성 모델 | 8001 | 약 5분 |
 | `judge` | 채점 모델 | 8002 | 약 3분 40초 |
+| `rerank` | 리랭커 모델. `rerank` 노드가 있는 config로 검색할 때만 띄운다 | 8004 | 약 1분 20초 |
 
 ```
 uv run --env-file .env python -m rag.serve download <역할>  # 이미지와 고정 리비전의 모델 파일을 받는다. 외부 접속은 이 명령만 한다

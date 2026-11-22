@@ -208,3 +208,33 @@ def test_records_host_name(setup, qdrant, embeddings, tmp_path, monkeypatch):
 
     # Assert
     assert json.loads((run_dir / "run.json").read_text())["host"] == "node-b"
+
+
+def test_reranks_search_results_with_given_reranker(setup, qdrant, embeddings, tmp_path):
+    """config에 rerank 노드가 있으면, 넘겨받은 리랭커로 검색 결과를 다시 줄 세워 쓴다."""
+    # Arrange: 검색은 두 청크를 모두 가져오고, 리랭커는 beta가 든 청크에 낮은 점수를 준다
+    config_path, docs, eval_file = setup
+    config_path.write_text(
+        CONFIG.replace("top_k: 1}", "top_k: 2}\n  - rerank: {top_k: 1}")
+        + "rerank: {base_url: http://127.0.0.1:8004/v1, model: m, revision: r}\n"
+    )
+    config = load_config(config_path)
+    add_index(qdrant, index_name(config, count_docs(docs)), [("doc-a", "alpha"), ("doc-b", "beta")])
+
+    # Act
+    run_dir = retrieve(
+        config_path,
+        config,
+        client=qdrant,
+        embeddings=embeddings,
+        docs_dir=docs,
+        eval_file=eval_file,
+        runs_root=tmp_path / "runs",
+        command=[],
+        token_len=len,
+        reranker=lambda question, contexts: [-float("beta" in text) for text in contexts],
+    )
+
+    # Assert: 첫 문항 "beta?"의 검색 1위는 doc-b지만 리랭커가 doc-a를 고른다
+    rows = [json.loads(line) for line in (run_dir / "contexts.jsonl").read_text().splitlines()]
+    assert [row["doc_ids"] for row in rows] == [["doc-a"], ["doc-a"]]

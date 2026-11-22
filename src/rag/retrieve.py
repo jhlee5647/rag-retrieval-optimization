@@ -23,6 +23,7 @@ from rag.config import Config, load_config
 from rag.data import count_docs, read_questions
 from rag.index import build_index, has_index, index_name, token_counter
 from rag.metrics import question_scores, summarize
+from rag.nodes.rerank import make_reranker
 from rag.pipeline import Resources, build_graph
 from rag.runs import create_run_dir, file_sha256, git_commit
 from rag.serve import check_model
@@ -46,6 +47,7 @@ def retrieve(
     token_len: Callable[[str], int],
     limit: int | None = None,
     servers: dict[str, dict[str, str]] | None = None,
+    reranker: Callable[[str, list[str]], list[float]] | None = None,
 ) -> Path:
     """평가 문항마다 검색 그래프를 돌려 `contexts.jsonl`, 검색 지표, config 사본을 쓴다.
 
@@ -68,6 +70,7 @@ def retrieve(
         token_len: 색인을 만들 때 청크 길이를 세는 함수.
         limit: 평가 파일의 앞 몇 문항만 돌릴지. None이면 전부 돌린다.
         servers: 시작할 때 대조한 서버 모델. `run.json`에 그대로 적는다.
+        reranker: 질문과 청크들로 청크마다 점수를 내는 함수. config에 rerank 노드가 있을 때 넘긴다.
 
     Returns:
         `<runs_root>/retrieve/<config 이름>/<실행 시각>/`.
@@ -89,7 +92,9 @@ def retrieve(
         embedding=embeddings,
         validate_collection_config=False,
     )
-    graph = build_graph(config.retrieve, Resources(config=config, vectorstore=store))
+    graph = build_graph(
+        config.retrieve, Resources(config=config, vectorstore=store, reranker=reranker)
+    )
     if not has_index(client, name):
         print(
             f"색인 {name}이 없어 문서 {doc_count}개로 새로 만든다. 문서 전체는 하루 가까이 걸린다"
@@ -167,6 +172,11 @@ def main(argv: list[str] | None = None) -> None:
     e = config.embedding
     # 오래 걸리는 일을 시작하기 전에, 떠 있는 서버가 config의 모델인지 확인한다.
     servers = {"embed": check_model("embed", e.base_url, e.model, e.revision)}
+    reranker = None
+    if config.rerank is not None:
+        r = config.rerank
+        servers["rerank"] = check_model("rerank", r.base_url, r.model, r.revision)
+        reranker = make_reranker(r)
     run_dir = retrieve(
         args.config,
         config,
@@ -186,6 +196,7 @@ def main(argv: list[str] | None = None) -> None:
         token_len=token_counter(config.embedding.model, config.embedding.revision),
         limit=args.limit,
         servers=servers,
+        reranker=reranker,
     )
     print(run_dir)
 

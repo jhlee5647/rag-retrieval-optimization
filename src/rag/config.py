@@ -66,6 +66,14 @@ class Embedding(Strict):
     )
 
 
+class Rerank(Strict):
+    """리랭커 서버와 모델."""
+
+    base_url: LocalUrl
+    model: str
+    revision: str
+
+
 class EvalFields(Strict):
     """이 도구가 쓰는 이름(왼쪽)에 대응하는 평가 파일의 필드 이름(오른쪽)."""
 
@@ -105,7 +113,10 @@ class Judge(Strict):
 
 
 class Config(Strict):
-    """config 전체. `generation`, `generate`, `judge`를 빼면 검색만 하는 config다."""
+    """config 전체. `generation`, `generate`, `judge`를 빼면 검색만 하는 config다.
+
+    `rerank`는 `retrieve`에 rerank 노드를 넣을 때만 적는다.
+    """
 
     index: Index
     chunking: Chunking
@@ -113,6 +124,7 @@ class Config(Strict):
     eval: Eval
     # 항목마다 `{노드 이름: 인자}` 하나다. 적힌 순서대로 노드를 잇는다.
     retrieve: list[dict[str, dict[str, Any]]] = Field(min_length=1)
+    rerank: Rerank | None = None
     generation: Generation | None = None
     generate: list[dict[str, dict[str, Any]]] | None = Field(default=None, min_length=1)
     judge: Judge | None = None
@@ -130,6 +142,13 @@ class Config(Strict):
         present = [self.generation is not None, self.generate is not None, self.judge is not None]
         if any(present) and not all(present):
             raise ValueError("generation, generate, judge는 함께 적거나 함께 뺀다")
+        return self
+
+    @model_validator(mode="after")
+    def _rerank_with_node(self):
+        has_node = any("rerank" in step for step in self.retrieve)
+        if has_node != (self.rerank is not None):
+            raise ValueError("rerank 절과 retrieve의 rerank 노드는 함께 적거나 함께 뺀다")
         return self
 
     @model_validator(mode="after")

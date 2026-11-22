@@ -29,10 +29,15 @@ class State(TypedDict, total=False):
 
 @dataclass(frozen=True)
 class Resources:
-    """노드가 쓰는 config와 외부 자원. 검색 단계는 벡터 저장소를, 생성 단계는 생성 모델을 쓴다."""
+    """노드가 쓰는 config와 외부 자원.
+
+    검색 단계는 벡터 저장소를, rerank 노드가 있으면 리랭커도 쓴다. 생성 단계는 생성 모델을 쓴다.
+    """
 
     config: Config
     vectorstore: QdrantVectorStore | None = None
+    # 질문과 청크들을 받아, 청크 순서대로 관련도 점수를 돌려준다.
+    reranker: Callable[[str, list[str]], list[float]] | None = None
     llm: BaseChatModel | None = None
 
 

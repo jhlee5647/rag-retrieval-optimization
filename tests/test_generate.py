@@ -155,3 +155,19 @@ def test_records_host_name(setup, tmp_path, monkeypatch):
 
     # Assert
     assert json.loads((run_dir / "run.json").read_text())["host"] == "node-b"
+
+
+def test_rejects_different_reranker(setup, tmp_path):
+    """리랭커도 검색 조건이다. 검색 실행과 config의 rerank 절이 다르면 모델을 부르기 전에 거부한다."""
+    # Arrange: 검색 실행과 config 모두 rerank 노드가 있고, 리랭커 모델만 다르다
+    config_path, contexts_dir, _ = setup
+    node = "  - rerank: {top_k: 1}\nrerank: {base_url: http://127.0.0.1:8004/v1, model: MODEL, revision: r}\n"
+    (contexts_dir / "config.yaml").write_text(RETRIEVAL + node.replace("MODEL", "a"))
+    generation = config_path.read_text()[len(RETRIEVAL) :]
+    config_path.write_text(RETRIEVAL + node.replace("MODEL", "b") + generation)
+    llm = EchoLLM()
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="rerank"):
+        run(config_path, contexts_dir, llm, tmp_path)
+    assert llm.prompts == []

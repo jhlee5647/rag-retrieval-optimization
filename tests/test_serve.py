@@ -62,7 +62,7 @@ def docker(monkeypatch):
 
 def test_repo_servers_file_defines_all_roles(servers):
     """저장소의 servers.yaml이 검사를 통과하고 설계의 역할을 모두 정의한다."""
-    assert set(servers.vllm.servers) == {"embed", "gen", "judge"}
+    assert set(servers.vllm.servers) == {"embed", "gen", "judge", "rerank"}
     assert servers.vllm.image.startswith("vllm/vllm-openai@sha256:")
     assert servers.qdrant.image.startswith("qdrant/qdrant@sha256:")
 

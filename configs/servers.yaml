@@ -9,7 +9,7 @@ qdrant:
 vllm:
   image: vllm/vllm-openai@sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34  # v0.32.0
   # gpu_share는 GPU 전체 대비 고정 몫이다. 함께 띄우는 서버들의 합이 1을 넘으면 뒤의 서버가 기동하지 못한다.
-  # embed는 gen이나 judge 중 하나와 함께 뜬다. gen과 judge는 함께 뜨지 않는다.
+  # embed는 gen이나 judge 중 하나와 함께 뜬다. gen과 judge는 함께 뜨지 않는다. rerank는 검색할 때 embed와 함께 뜬다.
   servers:
     embed:
       model: Qwen/Qwen3-Embedding-4B
@@ -42,3 +42,11 @@ vllm:
       # 채점 입력은 문맥 몇 개와 답이라 32K면 충분하다. Gemma 4는 thinking이 기본으로 꺼져 있고,
       # 파서는 비어 있는 생각 블록을 답에서 걷어낸다.
       args: [--max-model-len, "32768", --language-model-only, --reasoning-parser, gemma4]
+    rerank:
+      model: BAAI/bge-reranker-v2-m3
+      revision: 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+      port: 8004
+      gpu_share: 0.07
+      # 글을 생성하지 않고 질문과 청크 한 쌍의 관련도 점수만 내므로 pooling으로 띄운다. vLLM이 /v1/rerank를 연다.
+      # 입력은 질문과 청크 하나라 2048토큰이면 넉넉하다.
+      args: [--runner, pooling, --max-model-len, "2048"]
