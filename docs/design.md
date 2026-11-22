@@ -257,10 +257,12 @@ naive RAG는 BM25 벡터를 쓰지 않는다. 그래도 새 색인에 넣는 이
 
 | 노드 | 인자 | 하는 일 |
 |---|---|---|
-| `search` | `mode`(지금은 `dense`만), `top_k` | 질문을 임베딩해 가까운 청크를 찾아 `contexts`와 `doc_ids`를 채운다 |
+| `search` | `mode`(`dense`, `bm25`, `hybrid`), `top_k`, `candidates`(`hybrid`에서만) | 질문으로 청크를 찾아 `contexts`와 `doc_ids`를 채운다 |
 | `answer` | `prompt`(틀 파일 경로) | 틀의 `{context}`와 `{question}`을 채워 생성 모델을 부르고 `answer`를 채운다 |
 
-- 질문은 `Instruct: <query_instruction>\nQuery:<질문>` 형식으로 임베딩한다. 문서 청크는 지시문 없이 임베딩돼 있다.
+- `dense`는 질문을 임베딩해 가까운 청크를 찾는다. 질문은 `Instruct: <query_instruction>\nQuery:<질문>` 형식으로 임베딩한다. 문서 청크는 지시문 없이 임베딩돼 있다.
+- `bm25`는 색인의 BM25 벡터로 질문의 단어가 든 청크를 찾는다. 임베딩 모델을 부르지 않는다.
+- `hybrid`는 두 검색이 각각 `candidates`개를 가져오고, 두 순위를 RRF로 합쳐 `top_k`개를 고른다. 한 검색에서 n위인 청크가 `1 / (60 + n - 1)`점을 받는다.
 - 문맥은 `\n\n---\n\n`으로 이어 붙인다.
 - 프롬프트는 영어로 쓰고, 문맥에만 근거해 답하고 문맥에 답이 없으면 없다고 말하게 한다.
 - 문항은 동시에 8개씩 처리한다. 설정으로 두지 않는다.

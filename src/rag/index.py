@@ -107,6 +107,15 @@ def bm25_vector(text: str) -> models.SparseVector:
     )
 
 
+def bm25_query(text: str) -> models.SparseVector:
+    """질문의 BM25 희소 벡터. 질문에 나온 단어마다 가중치가 1이다.
+
+    단어는 `bm25_vector`와 같은 방식으로 자른다. 다르게 자르면 색인의 청크와 번호가 맞지 않는다.
+    """
+    ids = sorted({zlib.crc32(word.encode()) for word in re.findall(r"\w+", text.lower())})
+    return models.SparseVector(indices=ids, values=[1.0] * len(ids))
+
+
 def build_index(
     client: QdrantClient,
     name: str,

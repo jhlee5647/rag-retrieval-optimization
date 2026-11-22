@@ -6,7 +6,7 @@ from conftest import REPO_ROOT, add_index, make_config
 from qdrant_client import models
 
 from rag.config import load_config
-from rag.index import bm25_vector, build_index, has_index, index_name
+from rag.index import bm25_query, bm25_vector, build_index, has_index, index_name
 
 
 def point_id(doc_id, chunk):
@@ -145,6 +145,18 @@ def test_bm25_vector_uses_crc32_ids_and_saturating_weights():
     assert weights == {
         zlib.crc32(b"alpha"): pytest.approx(2 * 2.5 / 3.5),
         zlib.crc32(b"beta"): pytest.approx(1.0),
+    }
+
+
+def test_bm25_query_weights_each_distinct_word_once():
+    """질문의 벡터는 청크와 같은 방식으로 자른 단어의 CRC32가 번호이고, 여러 번 나온 단어도 가중치가 1이다."""
+    # Act
+    v = bm25_query("Alpha alpha, beta!")
+
+    # Assert
+    assert dict(zip(v.indices, v.values, strict=True)) == {
+        zlib.crc32(b"alpha"): 1.0,
+        zlib.crc32(b"beta"): 1.0,
     }
 
 
