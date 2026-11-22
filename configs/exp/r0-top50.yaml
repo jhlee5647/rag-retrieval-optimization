@@ -1,0 +1,17 @@
+# 라운드 0의 진단용. 기준선에서 가져오는 청크 수만 50으로 바꿨고, 검색만 한다.
+# 청크를 더 가져오면 근거 문서가 어디까지 들어오는지 본다.
+index: {url: http://127.0.0.1:6333, exact: true}
+chunking: {size: 512, overlap: 64}
+embedding:
+  base_url: http://127.0.0.1:8003/v1
+  model: Qwen/Qwen3-Embedding-4B
+  revision: 5cf2132abc99cad020ac570b19d031efec650f2b
+  max_input_tokens: 8192
+  query_instruction: Given a web search query, retrieve relevant passages that answer the query
+eval:
+  fields: {id: id, question: question, answer: reference, doc_ids: expected_doc_ids, type: type}
+  # 50보다 작은 k의 값은 중복을 뺀 문서로 센 것이라, 청크를 그만큼만 가져온 실행의 값과 다르다
+  # (docs/optimization.md의 "k 규칙").
+  k: [1, 5, 10, 20, 50]
+retrieve:
+  - search: {mode: dense, top_k: 50}

@@ -30,6 +30,22 @@ def test_index_name_of_existing_index_is_fixed():
 
 
 @pytest.mark.parametrize(
+    "path", sorted((REPO_ROOT / "configs" / "exp").glob("*.yaml")), ids=lambda path: path.name
+)
+def test_experiment_configs_use_existing_index(path):
+    """실험 config는 모두 검사를 통과하고, 장비의 기존 색인을 쓴다.
+
+    색인 조건(청크 크기, 겹침, 임베딩 모델)을 한 글자라도 다르게 적으면 `retrieve`가 문서 전체의 색인을
+    새로 만들기 시작한다. 색인을 다시 만드는 실험을 하기로 하면 이 테스트를 고친다.
+    """
+    # Act
+    name = index_name(load_config(path), doc_count=511_956)
+
+    # Assert
+    assert name == "index-1fd89b43b5786220"
+
+
+@pytest.mark.parametrize(
     "overrides, doc_count",
     [
         ({"chunking": {"size": 256, "overlap": 64}}, 10),
