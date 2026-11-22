@@ -1,0 +1,28 @@
+# 라운드 1의 후보. 기준선에서 검색 방식만 BM25로 바꿨다.
+# 임베딩 검색의 상위 50개에도 없던 근거 문서를 단어 일치로 찾는지 본다.
+index: {url: http://127.0.0.1:6333, exact: true}
+chunking: {size: 512, overlap: 64}
+embedding:
+  base_url: http://127.0.0.1:8003/v1
+  model: Qwen/Qwen3-Embedding-4B
+  revision: 5cf2132abc99cad020ac570b19d031efec650f2b
+  max_input_tokens: 8192
+  query_instruction: Given a web search query, retrieve relevant passages that answer the query
+eval:
+  fields: {id: id, question: question, answer: reference, doc_ids: expected_doc_ids, type: type}
+  k: [1, 5]
+retrieve:
+  - search: {mode: bm25, top_k: 5}
+generation:
+  base_url: http://127.0.0.1:8001/v1
+  model: Qwen/Qwen3.8-27B-FP8
+  revision: c3a462cc3d38cf351f3b26cbd763469eeb74ef81
+  max_model_len: 32768
+  max_tokens: 512
+  temperature: 0
+generate:
+  - answer: {prompt: prompts/answer.txt}
+judge:
+  base_url: http://127.0.0.1:8002/v1
+  model: RedHatAI/gemma-4-26B-A4B-it-NVFP4
+  revision: 5557756b8dce33ac72f2bd702b11729fdba3b839
