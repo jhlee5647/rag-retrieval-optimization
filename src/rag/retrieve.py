@@ -15,7 +15,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 from langchain_core.embeddings import Embeddings
-from langchain_openai import OpenAIEmbeddings
+from langchain_core.language_models import BaseChatModel
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
 
@@ -48,6 +49,7 @@ def retrieve(
     limit: int | None = None,
     servers: dict[str, dict[str, str]] | None = None,
     reranker: Callable[[str, list[str]], list[float]] | None = None,
+    llm: BaseChatModel | None = None,
 ) -> Path:
     """평가 문항마다 검색 그래프를 돌려 `contexts.jsonl`, 검색 지표, config 사본을 쓴다.
 
@@ -71,6 +73,7 @@ def retrieve(
         limit: 평가 파일의 앞 몇 문항만 돌릴지. None이면 전부 돌린다.
         servers: 시작할 때 대조한 서버 모델. `run.json`에 그대로 적는다.
         reranker: 질문과 청크들로 청크마다 점수를 내는 함수. config에 rerank 노드가 있을 때 넘긴다.
+        llm: 생성 모델. config에 select 노드가 있을 때 넘긴다.
 
     Returns:
         `<runs_root>/retrieve/<config 이름>/<실행 시각>/`.
@@ -93,7 +96,8 @@ def retrieve(
         validate_collection_config=False,
     )
     graph = build_graph(
-        config.retrieve, Resources(config=config, vectorstore=store, reranker=reranker)
+        config.retrieve,
+        Resources(config=config, vectorstore=store, reranker=reranker, llm=llm),
     )
     if not has_index(client, name):
         print(
@@ -169,6 +173,10 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     config = load_config(args.config)
+    # select 노드는 검색 단계에서 생성 모델을 부른다.
+    uses_llm = any("select" in step for step in config.retrieve)
+    if uses_llm and config.generation is None:
+        parser.error(f"{args.config}에 generation이 없다. select 노드는 생성 모델을 쓴다")
     e = config.embedding
     # 오래 걸리는 일을 시작하기 전에, 떠 있는 서버가 config의 모델인지 확인한다.
     servers = {"embed": check_model("embed", e.base_url, e.model, e.revision)}
@@ -177,6 +185,14 @@ def main(argv: list[str] | None = None) -> None:
         r = config.rerank
         servers["rerank"] = check_model("rerank", r.base_url, r.model, r.revision)
         reranker = make_reranker(r)
+    llm = None
+    if uses_llm:
+        g = config.generation
+        servers["gen"] = check_model("gen", g.base_url, g.model, g.revision)
+        # 답의 토큰 한도는 노드가 정한다. generation.max_tokens는 답을 만드는 생성 단계의 값이다.
+        llm = ChatOpenAI(
+            base_url=g.base_url, model=g.model, api_key="EMPTY", temperature=g.temperature
+        )
     run_dir = retrieve(
         args.config,
         config,
@@ -197,6 +213,7 @@ def main(argv: list[str] | None = None) -> None:
         limit=args.limit,
         servers=servers,
         reranker=reranker,
+        llm=llm,
     )
     print(run_dir)
 

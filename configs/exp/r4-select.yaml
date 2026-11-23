@@ -1,0 +1,36 @@
+# 라운드 4의 후보. 리랭커가 추린 문서에서 넘길 문서를 생성 모델이 고른다.
+# r1-hybrid-rerank의 후보를 리랭커로 매겨 문서마다 청크 하나씩 상위 20문서를 남기고, 생성 모델이 그중 5개를 고른다.
+# 검색할 때 생성 서버(gen)도 떠 있어야 한다.
+index: {url: http://127.0.0.1:6333, exact: true}
+chunking: {size: 512, overlap: 64}
+embedding:
+  base_url: http://127.0.0.1:8003/v1
+  model: Qwen/Qwen3-Embedding-4B
+  revision: 5cf2132abc99cad020ac570b19d031efec650f2b
+  max_input_tokens: 8192
+  query_instruction: Given a web search query, retrieve relevant passages that answer the query
+eval:
+  fields: {id: id, question: question, answer: reference, doc_ids: expected_doc_ids, type: type}
+  k: [1, 5]
+retrieve:
+  # top_k를 두 검색의 후보 수의 합으로 두어, 후보를 자르지 않고 리랭커에 넘긴다.
+  - search: {mode: hybrid, top_k: 100, candidates: 50}
+  - rerank: {top_k: 20, dedup: true}
+  - select: {prompt: prompts/select.txt, top_k: 5}
+rerank:
+  base_url: http://127.0.0.1:8004/v1
+  model: BAAI/bge-reranker-v2-m3
+  revision: 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+generation:
+  base_url: http://127.0.0.1:8001/v1
+  model: Qwen/Qwen3.8-27B-FP8
+  revision: c3a462cc3d38cf351f3b26cbd763469eeb74ef81
+  max_model_len: 32768
+  max_tokens: 512
+  temperature: 0
+generate:
+  - answer: {prompt: prompts/answer.txt}
+judge:
+  base_url: http://127.0.0.1:8002/v1
+  model: RedHatAI/gemma-4-26B-A4B-it-NVFP4
+  revision: 5557756b8dce33ac72f2bd702b11729fdba3b839

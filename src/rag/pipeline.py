@@ -31,7 +31,8 @@ class State(TypedDict, total=False):
 class Resources:
     """노드가 쓰는 config와 외부 자원.
 
-    검색 단계는 벡터 저장소를, rerank 노드가 있으면 리랭커도 쓴다. 생성 단계는 생성 모델을 쓴다.
+    검색 단계는 벡터 저장소를, rerank 노드가 있으면 리랭커도, select 노드가 있으면 생성 모델도 쓴다.
+    생성 단계는 생성 모델을 쓴다.
     """
 
     config: Config

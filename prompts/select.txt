@@ -1,0 +1,11 @@
+You are selecting documents from a company's internal knowledge base to answer a question.
+
+Question: {question}
+
+Candidate documents (excerpts):
+
+{documents}
+
+Task: Pick the documents that an expert would need to open to write a complete and correct answer. Prefer documents that state the specific facts the question asks for (names, dates, numbers, decisions, status) over documents that only mention the same project, customer or topic. If the answer is spread over several documents, include each document that contributes a distinct required fact. List them from most to least important, at most {top_k}. Do not answer the question itself.
+
+Output only a JSON array of the bracket numbers, for example [3, 1, 7].
