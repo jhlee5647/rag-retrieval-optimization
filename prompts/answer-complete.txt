@@ -1,0 +1,6 @@
+Answer the question using only the context below. If the context does not contain the answer, say "I don't know." Give a complete answer: include every detail from the context that the question asks for (names, numbers, dates, conditions, reasons), and nothing beyond what it asks.
+
+Context:
+{context}
+
+Question: {question}

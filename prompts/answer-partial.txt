@@ -1,0 +1,6 @@
+Answer the question using only the context below. If the context answers only part of the question, answer that part. Say "I don't know." only if the context contains nothing relevant to the question. Keep the answer concise.
+
+Context:
+{context}
+
+Question: {question}
