@@ -4,6 +4,7 @@ import re
 
 import pytest
 from conftest import add_index
+from langchain_core.messages import AIMessage
 
 from rag.config import load_config
 from rag.data import count_docs
@@ -238,3 +239,56 @@ def test_reranks_search_results_with_given_reranker(setup, qdrant, embeddings, t
     # Assert: 첫 문항 "beta?"의 검색 1위는 doc-b지만 리랭커가 doc-a를 고른다
     rows = [json.loads(line) for line in (run_dir / "contexts.jsonl").read_text().splitlines()]
     assert [row["doc_ids"] for row in rows] == [["doc-a"], ["doc-a"]]
+
+
+class SecondPickLLM:
+    """언제나 둘째 청크를 고르는 가짜 생성 모델."""
+
+    def bind(self, **kwargs):
+        return self
+
+    def invoke(self, prompt):
+        return AIMessage(content="[2]")
+
+
+def test_selects_search_results_with_given_llm(setup, qdrant, embeddings, tmp_path):
+    """config에 select 노드가 있으면, 넘겨받은 생성 모델이 고른 청크를 쓴다."""
+    # Arrange: 검색은 두 청크를 모두 가져오고, 생성 모델은 둘째를 고른다
+    config_path, docs, eval_file = setup
+    prompt = tmp_path / "select.txt"
+    prompt.write_text("{question} {documents} {top_k}")
+    config_path.write_text(
+        CONFIG.replace("top_k: 1}", f"top_k: 2}}\n  - select: {{prompt: {prompt}, top_k: 1}}")
+    )
+    config = load_config(config_path)
+    add_index(qdrant, index_name(config, count_docs(docs)), [("doc-a", "alpha"), ("doc-b", "beta")])
+
+    # Act
+    run_dir = retrieve(
+        config_path,
+        config,
+        client=qdrant,
+        embeddings=embeddings,
+        docs_dir=docs,
+        eval_file=eval_file,
+        runs_root=tmp_path / "runs",
+        command=[],
+        token_len=len,
+        llm=SecondPickLLM(),
+    )
+
+    # Assert: 검색 1위는 문항마다 다르지만("beta?"는 doc-b, "alpha?"는 doc-a) 둘째가 넘어간다
+    rows = [json.loads(line) for line in (run_dir / "contexts.jsonl").read_text().splitlines()]
+    assert [row["doc_ids"] for row in rows] == [["doc-a"], ["doc-b"]]
+
+
+def test_main_rejects_select_node_without_generation(setup, tmp_path, capsys):
+    """select 노드가 있는데 generation이 없는 config는 서버에 접속하기 전에 거부한다."""
+    # Arrange
+    config_path, _, _ = setup
+    config_path.write_text(CONFIG + "  - select: {prompt: prompts/select.txt, top_k: 1}\n")
+
+    # Act / Assert
+    with pytest.raises(SystemExit):
+        main([str(config_path)])
+    assert "generation이 없다" in capsys.readouterr().err

@@ -249,17 +249,18 @@ naive RAG는 BM25 벡터를 쓰지 않는다. 그래도 새 색인에 넣는 이
 기법 하나가 노드 하나다. config의 `retrieve`와 `generate`에 노드 이름과 인자를 순서대로 적으면, 그 순서대로 이은 LangGraph의 일직선 그래프가 된다.
 
 - 노드는 파이프라인의 한 단계를 맡는 함수다. 형태는 `(params, resources) → (State → 바뀐 필드만 담은 dict)`다.
-- `params`는 config에 적은 인자다. `resources`는 config, 그리고 검색 단계의 벡터 저장소나 생성 단계의 생성 모델이다.
+- `params`는 config에 적은 인자다. `resources`는 config, 그리고 검색 단계의 벡터 저장소나 생성 단계의 생성 모델이다. `select` 노드가 있으면 검색 단계에도 생성 모델을 넘긴다.
 - 노드는 등록해서 쓴다. 등록은 노드에 config에서 부를 이름을 붙여 두는 일이다. `@node("이름")`로 등록하고, config에 그 이름을 적으면 해당 노드가 실행된다. `nodes/` 폴더에 파일을 두면 자동으로 불러온다.
 - State는 노드들이 차례로 읽고 쓰는 공용 데이터다. 기본 필드는 `question`, `contexts`, `doc_ids`, `answer`다. LangGraph는 State에 없는 필드를 오류 없이 버리므로, 노드가 새 필드를 쓰려면 `pipeline.py`의 State에 먼저 더한다.
 - 그래프 안의 노드 이름에는 순번을 붙인다(`0-search`). LangGraph가 State 필드와 같은 노드 이름을 거부하고, 같은 노드를 두 번 넣을 수도 있어야 해서다.
 
-지금 만드는 노드는 셋이다.
+지금 만드는 노드는 넷이다.
 
 | 노드 | 인자 | 하는 일 |
 |---|---|---|
 | `search` | `mode`(`dense`, `bm25`, `hybrid`), `top_k`, `candidates`(`hybrid`에서만) | 질문으로 청크를 찾아 `contexts`와 `doc_ids`를 채운다 |
 | `rerank` | `top_k`, `title`, `dedup` | 앞 노드가 가져온 청크를 리랭커 점수가 높은 순으로 `top_k`개만 남긴다 |
+| `select` | `prompt`(틀 파일 경로), `top_k` | 앞 노드가 넘긴 청크를 생성 모델에 보여 주고, 고른 것을 앞에 둔 `top_k`개만 남긴다 |
 | `answer` | `prompt`(틀 파일 경로) | 틀의 `{context}`와 `{question}`을 채워 생성 모델을 부르고 `answer`를 채운다 |
 
 - `dense`는 질문을 임베딩해 가까운 청크를 찾는다. 질문은 `Instruct: <query_instruction>\nQuery:<질문>` 형식으로 임베딩한다. 문서 청크는 지시문 없이 임베딩돼 있다.
@@ -268,6 +269,7 @@ naive RAG는 BM25 벡터를 쓰지 않는다. 그래도 새 색인에 넣는 이
 - `rerank`는 질문과 청크 한 쌍마다 리랭커 서버의 `/v1/rerank`에서 관련도 점수를 받는다. 순서는 이 점수만으로 정하고, 검색에서의 순위는 점수가 같을 때만 따른다.
 - `rerank`의 `title`을 켜면 청크를 리랭커에 넘길 때 그 문서의 첫 줄을 앞에 붙인다. 첫 줄은 색인에 든 문서의 첫 청크에서 가져온다. 다음 노드에 넘기는 청크의 글은 바꾸지 않는다.
 - `rerank`의 `dedup`을 켜면 한 문서에서 점수가 가장 높은 청크 하나만 남긴 뒤에 `top_k`개를 고른다.
+- `select`는 청크마다 `[1]`부터 번호를 붙여 틀의 `{documents}`에 넣고, 생성 모델이 고른 번호를 정수 배열로 받는다. 서버에 출력 형식을 함께 보내 배열 밖의 글자를 내지 못하게 한다. 고른 청크를 고른 순서대로 앞에 두고, 남는 자리는 앞 노드의 순서대로 채운다. 청크 하나를 문서 하나로 보여 주므로 `rerank`의 `dedup`과 함께 쓴다.
 - 문맥은 `\n\n---\n\n`으로 이어 붙인다.
 - 프롬프트는 영어로 쓰고, 문맥에만 근거해 답하고 문맥에 답이 없으면 없다고 말하게 한다.
 - 문항은 동시에 8개씩 처리한다. 설정으로 두지 않는다.
@@ -364,7 +366,7 @@ runs/generate/<config 이름>/<실행 시각>/
 | `judge` | `RedHatAI/gemma-4-26B-A4B-it-NVFP4` | 8002 | 0.66 |
 | `rerank` | `BAAI/bge-reranker-v2-m3` | 8004 | 0.07 |
 
-- `gen`과 `judge`는 함께 뜨지 않는다. `embed`는 둘 중 하나와 함께 뜬다. `rerank`는 `rerank` 노드가 있는 config로 검색할 때 `embed`와 함께 띄운다.
+- `gen`과 `judge`는 함께 뜨지 않는다. `embed`는 둘 중 하나와 함께 뜬다. `rerank`는 `rerank` 노드가 있는 config로 검색할 때 `embed`와 함께 띄운다. `select` 노드가 있는 config로 검색할 때는 `gen`도 함께 띄운다.
 - 포트는 모두 `127.0.0.1`에만 연다.
 - 모델 파일은 `HF_HOME` 아래에 고정 리비전으로 있어야 한다. 실행 중에는 내려받지 않는다.
 - Qdrant 저장 폴더는 기존 색인이 들어 있는 폴더를 그대로 쓴다.
