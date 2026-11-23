@@ -5,7 +5,7 @@ from pydantic import ValidationError
 from qdrant_client import models
 
 from rag.index import build_index
-from rag.nodes.search import search
+from rag.nodes.search import fuse_documents, search
 from rag.pipeline import Resources
 
 CHUNKS = [
@@ -224,4 +224,144 @@ def test_rejects_candidates_that_do_not_fit_mode(resources, embeddings, params, 
 
     # Assert
     assert [(e["type"], e["loc"]) for e in exc.value.errors()] == [expected]
+    assert embeddings.queries == []
+
+
+def test_fuse_ranks_document_by_position_of_its_first_chunk():
+    """한 문서의 청크가 한 목록에 여러 개 걸려도 한 번만 세고, 뒤 문서의 순위를 밀어내지 않는다."""
+    # Arrange: 청크 자리로 세면 y는 4위(1/63점)라 z의 3위(1/62점)에 밀린다. 문서 순위로는 2위(1/61점)다
+    lists = [["x", "x", "x", "y"], ["u", "v", "z"]]
+
+    # Act
+    fused = fuse_documents(lists, 5)
+
+    # Assert: 점수가 같은 x와 u, y와 v는 먼저 나온 쪽이 앞이다
+    assert fused == ["x", "u", "y", "v", "z"]
+
+
+def test_fuse_adds_scores_over_lists_and_keeps_top_documents():
+    """여러 목록에서 2위인 문서가 두 목록에서 1위인 문서를 앞서고, limit개만 남긴다."""
+    # Arrange: b는 3/61점, a는 2/60점, c는 1/60점이다
+    lists = [["a", "b"], ["a", "b"], ["c", "b"]]
+
+    # Act / Assert
+    assert fuse_documents(lists, 2) == ["b", "a"]
+
+
+# 문단 하나가 청크 하나다(청크 길이 2단어). 아래 테스트의 검색마다 1위가 하나로 정해지게 골랐다.
+# doc-a의 셋째 청크는 어느 검색에서도 1위가 아니다.
+MULTI_DOCS = {
+    "doc-a": "alpha alpha\n\nbeta gamma\n\nzulu zulu",
+    "doc-b": "gamma gamma",
+    "doc-c": "beta beta\n\nalpha gamma",
+}
+
+
+@pytest.fixture
+def multi_resources(qdrant, embeddings, tmp_path):
+    """`build_index`로 만든, 한 문서에 청크가 여럿인 색인."""
+    for name, text in MULTI_DOCS.items():
+        (tmp_path / f"{name}.txt").write_text(text, encoding="utf-8")
+    config = make_config(
+        index={"url": "http://127.0.0.1:6333", "exact": True},
+        chunking={"size": 2, "overlap": 0},
+    )
+    build_index(qdrant, "index-test", config, tmp_path, embeddings, lambda text: len(text.split()))
+    store = QdrantVectorStore(
+        client=qdrant,
+        collection_name="index-test",
+        embedding=embeddings,
+        validate_collection_config=False,
+    )
+    return Resources(config=config, vectorstore=store)
+
+
+def test_multi_returns_found_chunks_of_top_documents(multi_resources):
+    """multi는 질문, 검색어, 가상의 글의 검색 결과를 문서 단위로 합쳐 상위 문서의 걸린 청크를 넘긴다."""
+    # Arrange: 검색마다 1위 하나만 가져온다
+    run = search({"mode": "multi", "candidates": 1, "docs": 2}, multi_resources)
+    state = {
+        "question": "alpha?",
+        "queries": ["beta gamma", "beta beta"],
+        "passages": ["gamma gamma"],
+    }
+
+    # Act
+    result = run(state)
+
+    # Assert: 1위는 질문의 두 검색과 첫 검색어의 두 검색이 doc-a(첫째, 둘째 청크), 둘째 검색어의 두 검색이
+    # doc-c(첫째 청크)다. 가상의 글은 임베딩 검색이 doc-b, BM25 검색이 doc-c(둘째 청크)다. 이 BM25 검색은
+    # 질문의 alpha를 함께 넣어야 doc-c의 둘째 청크가 1위다. doc-b는 1위가 한 번뿐이라 빠진다
+    assert result == {
+        "contexts": ["alpha alpha", "beta gamma", "beta beta", "alpha gamma"],
+        "doc_ids": ["doc-a", "doc-a", "doc-c", "doc-c"],
+    }
+
+
+def test_multi_embeds_queries_with_instruction_and_passages_without(multi_resources, embeddings):
+    """질문과 검색어는 지시문을 붙여 임베딩하고, 가상의 글은 문서처럼 지시문 없이 임베딩한다."""
+    # Arrange
+    run = search({"mode": "multi", "candidates": 1, "docs": 1}, multi_resources)
+
+    # Act
+    run({"question": "alpha?", "queries": ["beta gamma"], "passages": ["gamma gamma"]})
+
+    # Assert
+    instruction = multi_resources.config.embedding.query_instruction
+    assert embeddings.queries == [
+        f"Instruct: {instruction}\nQuery:alpha?",
+        f"Instruct: {instruction}\nQuery:beta gamma",
+        "gamma gamma",
+    ]
+
+
+def test_multi_sends_candidates_and_exact_setting_for_every_search(
+    qdrant, multi_resources, monkeypatch
+):
+    """multi는 검색마다 후보 수를 넘기고, 임베딩 검색에는 정확 검색 여부도 넘긴다."""
+    # Arrange
+    sent = []
+    query_points = qdrant.query_points
+
+    def spy(*args, **kwargs):
+        sent.append(kwargs)
+        return query_points(*args, **kwargs)
+
+    monkeypatch.setattr(qdrant, "query_points", spy)
+    run = search({"mode": "multi", "candidates": 3, "docs": 1}, multi_resources)
+
+    # Act
+    run({"question": "alpha?", "queries": ["beta gamma"], "passages": []})
+
+    # Assert: 질문과 검색어마다 임베딩 검색, BM25 검색의 순서다
+    assert [kwargs["limit"] for kwargs in sent] == [3, 3, 3, 3]
+    assert [kwargs.get("using") for kwargs in sent] == [None, "bm25", None, "bm25"]
+    assert [kwargs["search_params"].exact for kwargs in sent[::2]] == [True, True]
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"mode": "multi", "candidates": 5},
+        {"mode": "multi", "candidates": 5, "docs": 2, "top_k": 5},
+        {"mode": "multi", "docs": 2},
+        {"mode": "hybrid", "top_k": 5, "candidates": 5, "docs": 2},
+        {"mode": "dense"},
+    ],
+    ids=[
+        "multi-without-docs",
+        "multi-with-top_k",
+        "multi-without-candidates",
+        "hybrid-with-docs",
+        "dense-without-top_k",
+    ],
+)
+def test_rejects_fields_that_do_not_fit_mode(resources, embeddings, params):
+    """multi는 candidates와 docs를 적고 top_k를 적지 않는다. 다른 mode는 docs 없이 top_k를 적는다."""
+    # Act
+    with pytest.raises(ValidationError) as exc:
+        search(params, resources)
+
+    # Assert
+    assert [(e["type"], e["loc"]) for e in exc.value.errors()] == [("value_error", ())]
     assert embeddings.queries == []

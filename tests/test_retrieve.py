@@ -292,3 +292,68 @@ def test_main_rejects_select_node_without_generation(setup, tmp_path, capsys):
     with pytest.raises(SystemExit):
         main([str(config_path)])
     assert "generation이 없다" in capsys.readouterr().err
+
+
+class AlphaLLM:
+    """검색어를 물으면 alpha 둘을, 가상의 글을 물으면 alpha를 돌려주는 가짜 생성 모델."""
+
+    def __init__(self, content: str = "") -> None:
+        self.content = content
+
+    def bind(self, **kwargs):
+        # 출력 형식은 검색어를 물을 때만 붙는다.
+        return AlphaLLM('["alpha", "alpha"]' if "response_format" in kwargs else "alpha")
+
+    def invoke(self, prompt):
+        return AIMessage(content=self.content)
+
+
+def test_searches_with_expanded_queries_and_records_them(setup, qdrant, embeddings, tmp_path):
+    """expand 노드가 만든 검색어와 가상의 글이 search 노드에 전해지고, contexts.jsonl에도 남는다."""
+    # Arrange: 색인은 retrieve가 만든다. BM25 벡터가 있어야 해서다
+    config_path, docs, eval_file = setup
+    queries, passage = tmp_path / "queries.txt", tmp_path / "passage.txt"
+    queries.write_text("{question}")
+    passage.write_text("{question} {style}")
+    config_path.write_text(
+        CONFIG.replace(
+            "  - search: {mode: dense, top_k: 1}\n",
+            f"  - expand: {{queries: [{queries}], passage: {passage}, styles: [chat]}}\n"
+            "  - search: {mode: multi, candidates: 1, docs: 1}\n",
+        )
+    )
+
+    # Act
+    run_dir = retrieve(
+        config_path,
+        load_config(config_path),
+        client=qdrant,
+        embeddings=embeddings,
+        docs_dir=docs,
+        eval_file=eval_file,
+        runs_root=tmp_path / "runs",
+        command=[],
+        token_len=len,
+        llm=AlphaLLM(),
+    )
+
+    # Assert: 질문 "beta?"만으로는 doc-b가 1위지만, alpha로 찾은 목록이 더 많아 doc-a가 넘어간다
+    rows = [json.loads(line) for line in (run_dir / "contexts.jsonl").read_text().splitlines()]
+    assert [row["doc_ids"] for row in rows] == [["doc-a"], ["doc-a"]]
+    assert [(row["queries"], row["passages"]) for row in rows] == [
+        (["alpha", "alpha"], ["alpha"])
+    ] * 2
+
+
+def test_main_rejects_expand_node_without_generation(setup, capsys):
+    """expand 노드가 있는데 generation이 없는 config는 서버에 접속하기 전에 거부한다."""
+    # Arrange
+    config_path, _, _ = setup
+    config_path.write_text(
+        CONFIG + "  - expand: {queries: [], passage: prompts/expand-passage.txt, styles: []}\n"
+    )
+
+    # Act / Assert
+    with pytest.raises(SystemExit):
+        main([str(config_path)])
+    assert "generation이 없다" in capsys.readouterr().err

@@ -24,6 +24,9 @@ class State(TypedDict, total=False):
     contexts: list[str]
     # contexts와 같은 순서로, 청크마다 그 청크가 나온 문서 ID다.
     doc_ids: list[str]
+    # expand 노드가 질문에서 만든 검색어와, 문서처럼 쓴 가상의 글이다. search 노드의 multi mode가 읽는다.
+    queries: list[str]
+    passages: list[str]
     answer: str
 
 
@@ -31,7 +34,7 @@ class State(TypedDict, total=False):
 class Resources:
     """노드가 쓰는 config와 외부 자원.
 
-    검색 단계는 벡터 저장소를, rerank 노드가 있으면 리랭커도, select 노드가 있으면 생성 모델도 쓴다.
+    검색 단계는 벡터 저장소를, rerank 노드가 있으면 리랭커도, expand나 select 노드가 있으면 생성 모델도 쓴다.
     생성 단계는 생성 모델을 쓴다.
     """
 
