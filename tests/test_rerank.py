@@ -3,15 +3,15 @@ import json
 
 import httpx
 import pytest
-from conftest import make_config
+from conftest import REPO_ROOT, make_config
 from langchain_qdrant import QdrantVectorStore
 from pydantic import ValidationError
 from qdrant_client import models
 
-from rag.config import Rerank
+from rag.config import Rerank, load_config
 from rag.index import point_id
 from rag.nodes.rerank import make_reranker, rerank
-from rag.pipeline import Resources
+from rag.pipeline import Resources, build_graph
 
 STATE = {
     "question": "which one?",
@@ -188,3 +188,70 @@ def test_make_reranker_raises_when_server_rejects_request():
     # Act / Assert
     with pytest.raises(httpx.HTTPStatusError):
         score("which one?", ["first"])
+
+
+def test_prior_weight_mixes_reranker_rank_with_incoming_rank():
+    """prior_weight를 주면 리랭커 순위와 앞 노드에서의 순위를 함께 써서 순서를 정한다."""
+    # Arrange: 리랭커 순위는 f, a, b, c, d, e고 앞 노드의 순서는 a부터 f까지다.
+    # a는 1/61 + 0.5/60점, f는 1/60 + 0.5/65점, b는 1/62 + 0.5/61점이라 a, f, b 순이다
+    state = {
+        "question": "which one?",
+        "contexts": list("abcdef"),
+        "doc_ids": [f"doc-{name}" for name in "abcdef"],
+    }
+    scores = [0.8, 0.7, 0.6, 0.5, 0.4, 0.9]
+    run = rerank({"top_k": 2, "prior_weight": 0.5}, resources_scoring(scores))
+
+    # Act
+    result = run(state)
+
+    # Assert: 리랭커 점수만으로는 f, a 순이다
+    assert result == {"contexts": ["a", "f"], "doc_ids": ["doc-a", "doc-f"]}
+
+
+def test_prior_weight_counts_ranks_among_chunks_kept_by_dedup():
+    """dedup을 켜면 두 순위를 문서마다 남긴 청크끼리 센다. 한 문서의 청크가 앞에 여럿 있어도 뒤 문서를 밀어내지 않는다."""
+    # Arrange: doc-q의 청크 다섯이 앞에 있고 doc-p의 청크가 뒤에 있다. 리랭커는 p를 1위, q의 첫 청크를 2위로 본다.
+    # 남긴 청크끼리 세면 p는 1/60 + 0.9/61점, q는 1/61 + 0.9/60점으로 p가 앞선다.
+    # 받은 자리 그대로 세면 p가 6번째(0.9/65)라 q에 밀린다
+    state = {
+        "question": "which one?",
+        "contexts": ["q0", "q1", "q2", "q3", "q4", "p0"],
+        "doc_ids": ["doc-q"] * 5 + ["doc-p"],
+    }
+    scores = [0.8, 0.1, 0.1, 0.1, 0.1, 0.9]
+    run = rerank({"top_k": 2, "dedup": True, "prior_weight": 0.9}, resources_scoring(scores))
+
+    # Act
+    result = run(state)
+
+    # Assert
+    assert result == {"contexts": ["p0", "q0"], "doc_ids": ["doc-p", "doc-q"]}
+
+
+def test_rejects_negative_prior_weight():
+    """prior_weight가 0보다 작으면 노드를 만들 때 거부한다."""
+    with pytest.raises(ValidationError) as exc:
+        rerank({"top_k": 5, "prior_weight": -0.5}, resources_scoring([]))
+
+    assert [(e["type"], e["loc"]) for e in exc.value.errors()] == [
+        ("greater_than_equal", ("prior_weight",))
+    ]
+
+
+def test_repo_expand_select_config_builds_graph(monkeypatch):
+    """저장소의 r4-expand-select config로 검색 그래프가 조립된다. 노드 넷의 인자가 맞는지 확인한다."""
+    # Arrange: 프롬프트 경로가 저장소 루트 기준이다
+    monkeypatch.chdir(REPO_ROOT)
+    config = load_config(REPO_ROOT / "configs" / "exp" / "r4-expand-select.yaml")
+
+    # Act
+    graph = build_graph(config.retrieve, Resources(config=config))
+
+    # Assert
+    assert [name for name in graph.get_graph().nodes if name[0].isdigit()] == [
+        "0-expand",
+        "1-search",
+        "2-rerank",
+        "3-select",
+    ]
