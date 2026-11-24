@@ -1,0 +1,7 @@
+You are searching a company's internal knowledge base (wiki pages, tickets, chat threads, emails, pull requests, meeting transcripts, CRM records) to answer the question below.
+
+Write 4 search queries that together would find every document needed to answer it. Each query must target a different piece of the needed information or a different kind of document that could hold it. Use the specific names, identifiers and terms from the question; keep each query under 20 words.
+
+Question: {question}
+
+Output only a JSON array of 4 strings.

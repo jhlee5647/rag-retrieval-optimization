@@ -73,7 +73,7 @@ def retrieve(
         limit: 평가 파일의 앞 몇 문항만 돌릴지. None이면 전부 돌린다.
         servers: 시작할 때 대조한 서버 모델. `run.json`에 그대로 적는다.
         reranker: 질문과 청크들로 청크마다 점수를 내는 함수. config에 rerank 노드가 있을 때 넘긴다.
-        llm: 생성 모델. config에 select 노드가 있을 때 넘긴다.
+        llm: 생성 모델. config에 expand나 select 노드가 있을 때 넘긴다.
 
     Returns:
         `<runs_root>/retrieve/<config 이름>/<실행 시각>/`.
@@ -173,10 +173,10 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     config = load_config(args.config)
-    # select 노드는 검색 단계에서 생성 모델을 부른다.
-    uses_llm = any("select" in step for step in config.retrieve)
+    # expand와 select 노드는 검색 단계에서 생성 모델을 부른다.
+    uses_llm = any(name in step for step in config.retrieve for name in ("expand", "select"))
     if uses_llm and config.generation is None:
-        parser.error(f"{args.config}에 generation이 없다. select 노드는 생성 모델을 쓴다")
+        parser.error(f"{args.config}에 generation이 없다. expand와 select 노드는 생성 모델을 쓴다")
     e = config.embedding
     # 오래 걸리는 일을 시작하기 전에, 떠 있는 서버가 config의 모델인지 확인한다.
     servers = {"embed": check_model("embed", e.base_url, e.model, e.revision)}

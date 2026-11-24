@@ -1,0 +1,3 @@
+Write a short excerpt (3-5 sentences) of {style} from a company's internal systems that contains the information asked about in the question below. Write it the way such a document is actually written, with plausible specifics, and do not repeat the question's wording where a natural author would use other words. Output only the excerpt.
+
+Question: {question}

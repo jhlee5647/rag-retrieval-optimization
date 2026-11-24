@@ -249,16 +249,17 @@ naive RAG는 BM25 벡터를 쓰지 않는다. 그래도 새 색인에 넣는 이
 기법 하나가 노드 하나다. config의 `retrieve`와 `generate`에 노드 이름과 인자를 순서대로 적으면, 그 순서대로 이은 LangGraph의 일직선 그래프가 된다.
 
 - 노드는 파이프라인의 한 단계를 맡는 함수다. 형태는 `(params, resources) → (State → 바뀐 필드만 담은 dict)`다.
-- `params`는 config에 적은 인자다. `resources`는 config, 그리고 검색 단계의 벡터 저장소나 생성 단계의 생성 모델이다. `select` 노드가 있으면 검색 단계에도 생성 모델을 넘긴다.
+- `params`는 config에 적은 인자다. `resources`는 config, 그리고 검색 단계의 벡터 저장소나 생성 단계의 생성 모델이다. `expand`나 `select` 노드가 있으면 검색 단계에도 생성 모델을 넘긴다.
 - 노드는 등록해서 쓴다. 등록은 노드에 config에서 부를 이름을 붙여 두는 일이다. `@node("이름")`로 등록하고, config에 그 이름을 적으면 해당 노드가 실행된다. `nodes/` 폴더에 파일을 두면 자동으로 불러온다.
-- State는 노드들이 차례로 읽고 쓰는 공용 데이터다. 기본 필드는 `question`, `contexts`, `doc_ids`, `answer`다. LangGraph는 State에 없는 필드를 오류 없이 버리므로, 노드가 새 필드를 쓰려면 `pipeline.py`의 State에 먼저 더한다.
+- State는 노드들이 차례로 읽고 쓰는 공용 데이터다. 기본 필드는 `question`, `contexts`, `doc_ids`, `answer`다. `expand` 노드가 `queries`와 `passages`를 더 쓴다. LangGraph는 State에 없는 필드를 오류 없이 버리므로, 노드가 새 필드를 쓰려면 `pipeline.py`의 State에 먼저 더한다.
 - 그래프 안의 노드 이름에는 순번을 붙인다(`0-search`). LangGraph가 State 필드와 같은 노드 이름을 거부하고, 같은 노드를 두 번 넣을 수도 있어야 해서다.
 
-지금 만드는 노드는 넷이다.
+지금 만드는 노드는 다섯이다.
 
 | 노드 | 인자 | 하는 일 |
 |---|---|---|
-| `search` | `mode`(`dense`, `bm25`, `hybrid`), `top_k`, `candidates`(`hybrid`에서만) | 질문으로 청크를 찾아 `contexts`와 `doc_ids`를 채운다 |
+| `expand` | `queries`(틀 파일 경로들), `passage`(틀 파일 경로), `styles` | 생성 모델이 질문에서 검색어와 가상의 글을 만들어 `queries`와 `passages`를 채운다 |
+| `search` | `mode`(`dense`, `bm25`, `hybrid`, `multi`), `top_k`(`multi`가 아닐 때), `candidates`(`hybrid`와 `multi`에서만), `docs`(`multi`에서만) | 질문으로 청크를 찾아 `contexts`와 `doc_ids`를 채운다 |
 | `rerank` | `top_k`, `title`, `dedup` | 앞 노드가 가져온 청크를 리랭커 점수가 높은 순으로 `top_k`개만 남긴다 |
 | `select` | `prompt`(틀 파일 경로), `top_k` | 앞 노드가 넘긴 청크를 생성 모델에 보여 주고, 고른 것을 앞에 둔 `top_k`개만 남긴다 |
 | `answer` | `prompt`(틀 파일 경로) | 틀의 `{context}`와 `{question}`을 채워 생성 모델을 부르고 `answer`를 채운다 |
@@ -266,6 +267,9 @@ naive RAG는 BM25 벡터를 쓰지 않는다. 그래도 새 색인에 넣는 이
 - `dense`는 질문을 임베딩해 가까운 청크를 찾는다. 질문은 `Instruct: <query_instruction>\nQuery:<질문>` 형식으로 임베딩한다. 문서 청크는 지시문 없이 임베딩돼 있다.
 - `bm25`는 색인의 BM25 벡터로 질문의 단어가 든 청크를 찾는다. 임베딩 모델을 부르지 않는다.
 - `hybrid`는 두 검색이 각각 `candidates`개를 가져오고, 두 순위를 RRF로 합쳐 `top_k`개를 고른다. 한 검색에서 n위인 청크가 `1 / (60 + n - 1)`점을 받는다.
+- `multi`는 `expand` 뒤에 쓴다. 질문, 검색어, 가상의 글마다 두 검색이 각각 `candidates`개를 가져오고, 모든 목록의 순위를 문서 단위로 RRF로 합쳐 상위 `docs`개 문서를 고른다. 목록에서 문서의 순위는 그 문서의 청크가 처음 나온 자리다. 고른 문서의 청크 가운데 검색에 걸린 것을 모두 넘기므로 청크 수는 문항마다 다르다.
+- `multi`에서 검색어는 질문처럼 지시문을 붙여 임베딩한다. 가상의 글은 문서처럼 지시문 없이 임베딩하고, BM25 검색에는 질문과 이어 붙여 넣는다.
+- `expand`는 `queries`의 틀마다 생성 모델에 한 번 물어 검색어 여러 개를 문자열 배열로 받고, `styles`의 문서 종류마다 한 번 물어 그 종류의 문서처럼 쓴 가상의 글(HyDE)을 받는다. 검색어를 물을 때는 서버에 출력 형식을 함께 보낸다.
 - `rerank`는 질문과 청크 한 쌍마다 리랭커 서버의 `/v1/rerank`에서 관련도 점수를 받는다. 순서는 이 점수만으로 정하고, 검색에서의 순위는 점수가 같을 때만 따른다.
 - `rerank`의 `title`을 켜면 청크를 리랭커에 넘길 때 그 문서의 첫 줄을 앞에 붙인다. 첫 줄은 색인에 든 문서의 첫 청크에서 가져온다. 다음 노드에 넘기는 청크의 글은 바꾸지 않는다.
 - `rerank`의 `dedup`을 켜면 한 문서에서 점수가 가장 높은 청크 하나만 남긴 뒤에 `top_k`개를 고른다.
@@ -366,7 +370,7 @@ runs/generate/<config 이름>/<실행 시각>/
 | `judge` | `RedHatAI/gemma-4-26B-A4B-it-NVFP4` | 8002 | 0.66 |
 | `rerank` | `BAAI/bge-reranker-v2-m3` | 8004 | 0.07 |
 
-- `gen`과 `judge`는 함께 뜨지 않는다. `embed`는 둘 중 하나와 함께 뜬다. `rerank`는 `rerank` 노드가 있는 config로 검색할 때 `embed`와 함께 띄운다. `select` 노드가 있는 config로 검색할 때는 `gen`도 함께 띄운다.
+- `gen`과 `judge`는 함께 뜨지 않는다. `embed`는 둘 중 하나와 함께 뜬다. `rerank`는 `rerank` 노드가 있는 config로 검색할 때 `embed`와 함께 띄운다. `expand`나 `select` 노드가 있는 config로 검색할 때는 `gen`도 함께 띄운다.
 - 포트는 모두 `127.0.0.1`에만 연다.
 - 모델 파일은 `HF_HOME` 아래에 고정 리비전으로 있어야 한다. 실행 중에는 내려받지 않는다.
 - Qdrant 저장 폴더는 기존 색인이 들어 있는 폴더를 그대로 쓴다.

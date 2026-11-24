@@ -1,0 +1,7 @@
+You are searching a company's internal knowledge base (wiki pages, tickets, chat threads, emails, pull requests, meeting transcripts, CRM records) to answer the question below. The document that answers it probably uses different words than the question does.
+
+Write 4 alternative search queries. Each must restate what the question is looking for using different vocabulary that the source document might actually use (concrete terms, synonyms, the way an engineer, salesperson or support agent would write it). Keep names and identifiers from the question unchanged; keep each query under 25 words.
+
+Question: {question}
+
+Output only a JSON array of 4 strings.
