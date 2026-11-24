@@ -1,0 +1,46 @@
+# 라운드 4의 후보. r4-expand-select에서 넘기는 청크의 구성만 바꾼다.
+# 생성 모델이 고른 문서마다 청크를 하나만 넘기지 않고, 청크 5개 안에서 고른 문서의 청크를 먼저 채운다.
+# 고른 문서의 청크는 문서마다 앞에서부터 16개까지 색인에서 읽어 리랭커로 매긴다.
+# 답은 라운드 3에서 채택한 생성 조건(r3-complete)으로 만든다. 검색할 때 생성 서버(gen)도 떠 있어야 한다.
+index: {url: http://127.0.0.1:6333, exact: true}
+chunking: {size: 512, overlap: 64}
+embedding:
+  base_url: http://127.0.0.1:8003/v1
+  model: Qwen/Qwen3-Embedding-4B
+  revision: 5cf2132abc99cad020ac570b19d031efec650f2b
+  max_input_tokens: 8192
+  query_instruction: Given a web search query, retrieve relevant passages that answer the query
+eval:
+  fields: {id: id, question: question, answer: reference, doc_ids: expected_doc_ids, type: type}
+  k: [1, 5]
+retrieve:
+  - expand:
+      # 틀마다 검색어 4개를 만든다. 앞의 것은 질문이 묻는 정보 조각마다, 뒤의 것은 문서가 쓸 법한 다른 말로 쓴다.
+      queries: [prompts/expand-facets.txt, prompts/expand-paraphrase.txt]
+      passage: prompts/expand-passage.txt
+      # 가상의 글을 쓸 문서 종류. 틀의 {style}에 들어간다.
+      styles:
+        - a Slack channel conversation (a few short messages from different people)
+        - a meeting transcript (speakers discussing the matter in spoken language)
+        - an email between colleagues or with a customer
+        - an engineering ticket or pull request description (Jira, Linear or GitHub)
+  - search: {mode: multi, candidates: 100, docs: 150}
+  - rerank: {top_k: 40, dedup: true, prior_weight: 0.5}
+  - select: {prompt: prompts/select.txt, top_k: 5, doc_chunks: 16}
+rerank:
+  base_url: http://127.0.0.1:8004/v1
+  model: BAAI/bge-reranker-v2-m3
+  revision: 953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e
+generation:
+  base_url: http://127.0.0.1:8001/v1
+  model: Qwen/Qwen3.8-27B-FP8
+  revision: c3a462cc3d38cf351f3b26cbd763469eeb74ef81
+  max_model_len: 32768
+  max_tokens: 1024
+  temperature: 0
+generate:
+  - answer: {prompt: prompts/answer-complete.txt}
+judge:
+  base_url: http://127.0.0.1:8002/v1
+  model: RedHatAI/gemma-4-26B-A4B-it-NVFP4
+  revision: 5557756b8dce33ac72f2bd702b11729fdba3b839
