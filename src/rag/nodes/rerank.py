@@ -4,10 +4,11 @@ from collections.abc import Callable
 from typing import Any
 
 import httpx
-from pydantic import PositiveInt
+from pydantic import NonNegativeFloat, PositiveInt
 
 from rag.config import Rerank, Strict
 from rag.index import point_id
+from rag.nodes.search import RRF_K
 from rag.pipeline import Resources, State, node
 
 # 청크 100개에 1초가 걸리지 않지만(장비에서 측정), 여러 문항의 요청이 한꺼번에 몰릴 때를 위해 넉넉히 둔다.
@@ -23,6 +24,9 @@ class RerankParams(Strict):
     title: bool = False
     # 한 문서에서 점수가 가장 높은 청크 하나만 남긴다. 같은 문서의 청크가 여러 자리를 차지하지 않게 한다.
     dedup: bool = False
+    # 0보다 크면 순서를 리랭커 순위와 앞 노드에서의 순위로 함께 정한다. 앞 노드에서의 순위에 주는 가중치다.
+    # 여러 검색이 함께 위에 올린 문서를 리랭커가 조금 낮게 봤다고 버리지 않게 한다.
+    prior_weight: NonNegativeFloat = 0
 
 
 def make_reranker(
@@ -57,10 +61,13 @@ def make_reranker(
 def rerank(params: dict[str, Any], resources: Resources):
     """앞 노드의 청크 가운데 리랭커 점수가 높은 `top_k`개만 남기는 노드를 만든다.
 
-    순서는 리랭커 점수만으로 정한다. 검색에서의 순위는 점수가 같을 때만 따른다.
+    `prior_weight`를 주지 않으면 순서는 리랭커 점수만으로 정한다. 검색에서의 순위는 점수가 같을 때만 따른다.
 
     - `title`을 켜면 리랭커에는 "문서의 첫 줄 + 청크"를 넘긴다. 돌려주는 `contexts`는 원래 청크 그대로다.
     - `dedup`을 켜면 한 문서에서 점수가 가장 높은 청크만 남긴 뒤에 `top_k`개를 고른다.
+    - `prior_weight`를 주면 남긴 청크마다 `1 / (60 + 리랭커 순위) + prior_weight / (60 + 앞 노드에서의
+      순위)`를 매겨 높은 순으로 `top_k`개를 고른다. 두 순위는 남긴 청크끼리 0부터 센다. 점수가 아니라
+      순위를 쓰는 것은 리랭커 점수와 검색 점수의 눈금이 달라 그대로 더할 수 없어서다.
 
     Args:
         params: config에 적은 인자. `RerankParams`로 검사한다.
@@ -103,6 +110,12 @@ def rerank(params: dict[str, Any], resources: Resources):
             for i in order:
                 best.setdefault(doc_ids[i], i)
             order = list(best.values())
+        if p.prior_weight:
+            # 리랭커 순위는 order에서의 자리고, 앞 노드에서의 순위는 남긴 청크가 앞 노드에서 온 순서다.
+            mixed = {i: 1 / (RRF_K + rank) for rank, i in enumerate(order)}
+            for rank, i in enumerate(sorted(order)):
+                mixed[i] += p.prior_weight / (RRF_K + rank)
+            order = sorted(order, key=lambda i: -mixed[i])
         order = order[: p.top_k]
         return {
             "contexts": [contexts[i] for i in order],
