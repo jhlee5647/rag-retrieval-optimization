@@ -24,6 +24,7 @@ dev로 구성을 정한 뒤, test 250문항으로 세 구성의 검색을 한 �
 
 ## 알아 둘 것
 
+- `test-naive`와 `test-final`은 2026-11-24에 돌렸다. `test-hybrid-rerank`는 단계마다 수치를 보고하려고 그 결과를 본 뒤 2026-11-25에 더 돌렸다. 이 결과로 구성을 고치지 않았다.
 - 세 실행은 main에 남지 않은 작업 브랜치의 커밋(`4ba2340`, `5feeb7b`, `c6745b2`)에서 돌렸다. 그 커밋들과 main(`3061e82`)의 `src/`는 같다.
 - `test-final.yaml`은 돌릴 때 답 프롬프트가 main에 없는 것이었다. 저장소에는 답 프롬프트를 `r4-expand-select-chunks`와 같게(`prompts/answer-complete.txt`) 바꿔 넣었다. 검색 부분은 돌린 것과 같다.
 - 차이와 구간은 `pair`의 값이다. 전부 가져온 문항과 하나도 못 가져온 문항의 비율은 `scores.jsonl`의 문항별 Recall@5를 임시 스크립트로 센 값이다.
