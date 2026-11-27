@@ -144,7 +144,7 @@ flowchart LR
   F --> G[Generation]
 ```
 
-1. **Query Expansion (Multi-Query, HyDE)**: LLM이 질문을 다른 표현의 검색어 8개와 답이 있을 법한 가상 문서 4개(Slack 대화, 회의록, 메일, 티켓 형식)로 확장
+1. **Query Expansion (Multi-Query, HyDE)**: LLM이 질문을 다른 표현의 검색어 8개(정보 조각별 4개, 다른 표현 4개를 각각 한 번씩 요청)와 답이 있을 법한 가상 문서 4개(Slack 대화, 회의록, 메일, 티켓 형식, 종류마다 한 번씩 요청)로 확장
 2. **Hybrid Retrieval (Dense + BM25, RRF)**: 원 질문과 확장문 12개를 각각 Dense, BM25로 검색(검색당 100개), 결과 목록 26개(질의 13개 × Dense·BM25)를 문서 단위 RRF로 합쳐 상위 150문서 선정
 3. **Cross-Encoder Reranking**: bge-reranker-v2-m3 점수와 검색 순위를 섞어 40문서로 축소
 4. **LLM Listwise Reranking**: LLM이 40문서를 한꺼번에 읽고 질문에 필요한 5문서 선택
@@ -156,7 +156,7 @@ flowchart LR
 
 ### 비용
 
-- 검색 중 LLM을 문항당 7회 호출, 검색 시간 문항당 20.42초 (혼합 검색 + 리랭커는 0.61초, [개요](#개요)의 실험 환경 기준)
+- 검색 중 LLM을 문항당 7회 호출 (검색어 2회: 틀 2개 × 4개씩, 가상 문서 4회, 문서 선택 1회), 검색 시간 문항당 20.42초 (혼합 검색 + 리랭커는 0.61초, [개요](#개요)의 실험 환경 기준)
 
 ### 생성 단계
 
